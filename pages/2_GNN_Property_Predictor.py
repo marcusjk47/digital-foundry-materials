@@ -1,21 +1,40 @@
 """
-ML Alloy Development - Web Dashboard
-Interactive web application for alloy discovery using Materials Project data
+GNN Property Predictor
+
+Graph Neural Network for predicting materials properties from crystal structures.
+Uses Crystal Graph Convolutional Neural Networks (CGCNN) to leverage 3D atomic
+structure information beyond simple composition.
+
+Author: Digital Foundry Materials Science Toolkit
 """
 
 import streamlit as st
+import torch
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import numpy as np
-import os
 from pathlib import Path
+import sys
+import os
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+# Import our GNN modules
+try:
+    from crystal_graph import structure_to_graph, get_graph_stats
+    from element_features import get_element_features, get_element_feature_dim
+    from gnn_model import CGCNN, count_parameters
+    from pymatgen.core import Structure, Lattice
+    MODULES_AVAILABLE = True
+except ImportError as e:
+    MODULES_AVAILABLE = False
+    IMPORT_ERROR = str(e)
 
 # Page configuration
 st.set_page_config(
-    page_title="ML Alloy Development",
-    page_icon="🔬",
+    page_title="GNN Property Predictor",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -34,692 +53,515 @@ st.markdown("""
     h1 {
         color: #1f77b4;
     }
+    .info-box {
+        background-color: #e3f2fd;
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #2196f3;
+        margin: 10px 0;
+    }
+    .demo-box {
+        background-color: #fff3e0;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 5px solid #ff9800;
+        margin: 10px 0;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 # Title and header
-st.title("🔬 ML Alloy Development Dashboard")
-st.markdown("### Interactive Platform for Novel Alloy Discovery")
+st.title("🧠 GNN Property Predictor")
+st.markdown("### Graph Neural Networks for Materials Science")
 
-# Sidebar navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio(
-    "Go to",
-    ["🏠 Home", "📥 Download Data", "📊 Explore Data", "🤖 Train Models", "🔮 Discover Alloys"]
+# Check if modules are available
+if not MODULES_AVAILABLE:
+    st.error(f"❌ **Error:** Could not load GNN modules: {IMPORT_ERROR}")
+    st.info("💡 **Solution:** Make sure PyTorch and PyTorch Geometric are installed correctly.")
+    st.code("pip install torch torch-geometric pymatgen", language="bash")
+    st.stop()
+
+# Sidebar: Model Configuration
+st.sidebar.title("⚙️ Model Configuration")
+
+model_mode = st.sidebar.radio(
+    "Operation Mode:",
+    ["🎯 Demo Mode", "📚 Architecture Info", "🔮 Prediction (Coming Soon)"],
+    help="Demo mode shows GNN capabilities with example structures"
 )
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### Project Info")
-st.sidebar.info(
-    "**ML Alloy Development**\n\n"
-    "Discover novel alloys using machine learning and Materials Project data.\n\n"
-    "**Current Status:**\n"
-    "✅ Environment Ready\n"
-    "✅ API Connected\n"
-    "✅ Data Downloaded"
-)
+
+# Model architecture parameters
+with st.sidebar.expander("🏗️ Model Architecture"):
+    node_dim = st.slider("Node feature dimension", 32, 128, 64, 32)
+    hidden_dim = st.slider("Hidden dimension", 64, 256, 128, 32)
+    n_conv = st.slider("Number of conv layers", 1, 5, 3, 1)
+    n_hidden = st.slider("Number of hidden layers", 0, 3, 1, 1)
+
+# Graph construction parameters
+with st.sidebar.expander("📊 Graph Parameters"):
+    cutoff = st.slider("Cutoff distance (Å)", 3.0, 12.0, 8.0, 0.5,
+                      help="Maximum distance for atomic connectivity")
+    max_neighbors = st.slider("Max neighbors per atom", 4, 20, 12, 1,
+                              help="Limits graph density")
+
+st.sidebar.markdown("---")
+st.sidebar.info("""
+**GNN vs Traditional ML:**
+
+Traditional ML uses only:
+- Composition (e.g., Fe₀.₇Ni₀.₃)
+- Element properties
+
+GNNs additionally use:
+- 3D atomic positions
+- Bond lengths/angles
+- Crystal symmetry
+- Local atomic environments
+
+**Result:** Higher accuracy for structure-dependent properties!
+""")
 
 # ============================================================================
-# HOME PAGE
+# MAIN CONTENT
 # ============================================================================
-if page == "🏠 Home":
-    st.header("Welcome to ML Alloy Development! 👋")
+
+if model_mode == "📚 Architecture Info":
+    st.header("📚 Crystal Graph Convolutional Neural Network (CGCNN)")
+
+    st.markdown("""
+    <div class="info-box">
+    <h3>🔬 What is a GNN?</h3>
+
+    **Graph Neural Networks (GNNs)** are deep learning models that operate on graph-structured data.
+    For materials, the graph represents the crystal structure:
+
+    - **Nodes** = Atoms
+    - **Edges** = Chemical bonds (atoms within cutoff distance)
+    - **Node features** = Element properties (atomic number, electronegativity, radius, etc.)
+    - **Edge features** = Bond distances
+
+    Unlike traditional ML models that only use composition (e.g., "30% Ni, 70% Fe"),
+    GNNs understand the 3D atomic arrangement and local bonding environment.
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Architecture Diagram
+    st.subheader("🏗️ CGCNN Architecture")
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.markdown("""
+        **1. Input:** Crystal structure (CIF, POSCAR, or Materials Project ID)
+
+        **2. Graph Construction:**
+        - Convert atoms to graph nodes
+        - Connect atoms within cutoff distance
+        - Extract element features for each atom
+        - Calculate bond distances
+
+        **3. Message Passing (Convolution):**
+        ```
+        For each atom:
+            Gather information from neighbors
+            Update atom representation
+            Repeat N times (N = number of conv layers)
+        ```
+
+        **4. Pooling:**
+        - Aggregate all atom representations
+        - Create graph-level feature vector
+
+        **5. Prediction:**
+        - Pass through MLP (Multi-Layer Perceptron)
+        - Output predicted property
+        """)
+
+    with col2:
+        st.markdown("""
+        **Layer Flow:**
+
+        Structure
+        ↓
+        Graph
+        ↓
+        Embedding
+        ↓
+        Conv Layer 1
+        ↓
+        Conv Layer 2
+        ↓
+        Conv Layer 3
+        ↓
+        Pooling
+        ↓
+        MLP
+        ↓
+        Prediction
+        """)
+
+    st.markdown("---")
+
+    # Create example model
+    st.subheader("🔧 Current Model Configuration")
+
+    with st.spinner("Building model..."):
+        model = CGCNN(
+            node_feature_dim=node_dim,
+            edge_feature_dim=1,
+            hidden_dim=hidden_dim,
+            n_conv=n_conv,
+            n_hidden=n_hidden,
+            output_dim=1
+        )
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Python Version", "3.13.9")
-        st.metric("Packages Installed", "15+")
-
+        st.metric("Total Parameters", f"{count_parameters(model):,}")
     with col2:
-        # Check if data exists
-        data_files = list(Path('.').glob('*.csv'))
-        st.metric("Data Files", len(data_files))
-        if Path('fe_ni_alloys.csv').exists():
-            df = pd.read_csv('fe_ni_alloys.csv')
-            st.metric("Materials in DB", len(df))
-        else:
-            st.metric("Materials in DB", "0")
-
+        st.metric("Model Size", f"{count_parameters(model) * 4 / 1024 / 1024:.2f} MB")
     with col3:
-        st.metric("API Status", "Connected ✅")
-        st.metric("Materials Project", "Ready")
+        st.metric("Conv Layers", n_conv)
+
+    with st.expander("📋 Full Model Architecture"):
+        st.text(str(model))
 
     st.markdown("---")
 
-    # Quick stats dashboard
-    st.subheader("📊 Quick Overview")
+    # Feature Information
+    st.subheader("📊 Element Features")
 
-    if Path('fe_ni_alloys.csv').exists():
-        df = pd.read_csv('fe_ni_alloys.csv')
+    st.markdown(f"""
+    Each atom is represented by **{get_element_feature_dim()} features**:
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            # Formation energy distribution
-            fig = px.histogram(df, x='formation_energy',
-                             title='Formation Energy Distribution',
-                             labels={'formation_energy': 'Formation Energy (eV/atom)'},
-                             color_discrete_sequence=['#1f77b4'])
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col2:
-            # Stability distribution
-            fig = px.scatter(df, x='ni_fraction', y='formation_energy',
-                           color='energy_above_hull',
-                           title='Formation Energy vs Composition',
-                           labels={'ni_fraction': 'Ni Fraction',
-                                  'formation_energy': 'Formation Energy (eV/atom)',
-                                  'energy_above_hull': 'E above hull (eV)'},
-                           color_continuous_scale='RdYlGn_r')
-            st.plotly_chart(fig, use_container_width=True)
-
-        # Key findings
-        st.markdown("### 🔍 Key Findings")
-        stable_count = df['is_stable'].sum()
-        near_stable = (df['energy_above_hull'] < 0.1).sum()
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Materials", len(df))
-        col2.metric("Stable", f"{stable_count} ({stable_count/len(df)*100:.1f}%)")
-        col3.metric("Near-Stable", f"{near_stable} ({near_stable/len(df)*100:.1f}%)")
-        col4.metric("Avg Density", f"{df['density'].mean():.2f} g/cm³")
-    else:
-        st.info("📥 No data loaded yet. Go to 'Download Data' to get started!")
-
-    st.markdown("---")
-
-    # Features overview
-    st.subheader("🚀 What You Can Do")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("""
-        **📥 Download Data**
-        - Query Materials Project database
-        - Download alloy systems
-        - Filter by properties
-        - Export to CSV
-
-        **📊 Explore Data**
-        - Interactive visualizations
-        - Property correlations
-        - Composition analysis
-        - Stability insights
-        """)
-
-    with col2:
-        st.markdown("""
-        **🤖 Train Models**
-        - Build ML models
-        - Predict properties
-        - Evaluate accuracy
-        - Compare algorithms
-
-        **🔮 Discover Alloys**
-        - Generate candidates
-        - Predict properties
-        - Rank by stability
-        - Export results
-        """)
-
-    st.markdown("---")
-    st.markdown("### 📚 Quick Start Guide")
-    st.markdown("""
-    1. **Download Data**: Start by downloading alloy data from Materials Project
-    2. **Explore**: Visualize composition-property relationships
-    3. **Train Models**: Build predictive ML models
-    4. **Discover**: Generate and evaluate novel alloy candidates
+    1. **Atomic Number** - Element identity
+    2. **Group Number** - Column in periodic table
+    3. **Period** - Row in periodic table
+    4. **Electronegativity** - Tendency to attract electrons (Pauling scale)
+    5. **Atomic Radius** - Size of atom
+    6. **Valence Electrons** - Electrons in outer shell
+    7. **Ionization Energy** - Energy to remove electron
+    8. **Electron Affinity** - Energy released when gaining electron
+    9. **Atomic Mass** - Mass of atom
     """)
 
-# ============================================================================
-# DOWNLOAD DATA PAGE
-# ============================================================================
-elif page == "📥 Download Data":
-    st.header("Download Alloy Data from Materials Project")
+    # Example element features
+    st.markdown("**Example: Iron (Fe)**")
+    example_element = st.selectbox("Select element:",
+                                   ["Fe", "Ni", "Al", "Ti", "Cu", "Au", "Ag"],
+                                   key="element_select")
 
-    # API key check
-    api_key = os.environ.get('MP_API_KEY')
-    if not api_key:
-        try:
-            from dotenv import load_dotenv
-            load_dotenv()
-            api_key = os.environ.get('MP_API_KEY')
-        except:
-            pass
+    element_map = {"Fe": 26, "Ni": 28, "Al": 13, "Ti": 22, "Cu": 29, "Au": 79, "Ag": 47}
+    z = element_map[example_element]
 
-    if not api_key:
-        st.error("⚠️ API Key not found! Please set MP_API_KEY in your .env file")
-        st.stop()
-    else:
-        st.success("✅ Materials Project API Connected")
+    features = get_element_features(z, normalize=False)
+    feature_names = ["Atomic #", "Group", "Period", "Electronegativity",
+                    "Radius (Å)", "Valence e⁻", "Ionization (eV)", "Affinity (eV)", "Mass (amu)"]
+
+    df_features = pd.DataFrame({
+        "Feature": feature_names,
+        "Value": features.numpy()
+    })
+
+    st.dataframe(df_features, use_container_width=True)
+
+elif model_mode == "🎯 Demo Mode":
+    st.header("🎯 Demo: GNN Property Prediction")
+
+    st.markdown("""
+    <div class="demo-box">
+    <strong>ℹ️ Demo Mode:</strong> This demonstrates how the GNN processes crystal structures.
+    The model shown here is <strong>untrained</strong>, so predictions are random.
+    With training on real data, the model learns to predict properties like formation energy, band gap, bulk modulus, etc.
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # Download options
-    st.subheader("Select Alloy System")
+    # Example structures
+    st.subheader("📦 Select Example Structure")
+
+    example_structures = {
+        "BCC Iron (Fe)": {
+            "lattice": Lattice.cubic(2.87),
+            "species": ["Fe", "Fe"],
+            "coords": [[0, 0, 0], [0.5, 0.5, 0.5]],
+            "description": "Body-centered cubic iron, common structural steel"
+        },
+        "FCC Copper (Cu)": {
+            "lattice": Lattice.cubic(3.61),
+            "species": ["Cu"],
+            "coords": [[0, 0, 0]],
+            "description": "Face-centered cubic copper, excellent conductor"
+        },
+        "HCP Titanium (Ti)": {
+            "lattice": Lattice.hexagonal(2.95, 4.68),
+            "species": ["Ti", "Ti"],
+            "coords": [[0, 0, 0], [1/3, 2/3, 1/2]],
+            "description": "Hexagonal close-packed titanium, aerospace alloy"
+        },
+        "FCC Nickel (Ni)": {
+            "lattice": Lattice.cubic(3.52),
+            "species": ["Ni"],
+            "coords": [[0, 0, 0]],
+            "description": "Face-centered cubic nickel, corrosion resistant"
+        },
+        "BCC Aluminum (Al)": {
+            "lattice": Lattice.cubic(4.05),
+            "species": ["Al"],
+            "coords": [[0, 0, 0]],
+            "description": "Face-centered cubic aluminum, lightweight structural material"
+        },
+        "NaCl (Rock Salt)": {
+            "lattice": Lattice.cubic(5.64),
+            "species": ["Na", "Cl"],
+            "coords": [[0, 0, 0], [0.5, 0.5, 0.5]],
+            "description": "Ionic crystal, demonstrating multi-element graphs"
+        }
+    }
+
+    selected_structure = st.selectbox("Choose structure:", list(example_structures.keys()))
+
+    struct_data = example_structures[selected_structure]
+    st.info(f"ℹ️ {struct_data['description']}")
+
+    # Create structure
+    structure = Structure(
+        struct_data['lattice'],
+        struct_data['species'],
+        struct_data['coords']
+    )
 
     col1, col2 = st.columns(2)
 
     with col1:
-        system_type = st.selectbox(
-            "System Type",
-            ["Binary (2 elements)", "Ternary (3 elements)", "Custom"]
-        )
-
-        if system_type == "Binary (2 elements)":
-            el1 = st.selectbox("Element 1", ["Fe", "Ni", "Ti", "Al", "Co", "Cr", "Cu", "Mn", "Mo"])
-            el2 = st.selectbox("Element 2", ["Ni", "Fe", "Al", "Ti", "Cr", "Co", "Cu", "V", "W"])
-            chemsys = f"{el1}-{el2}"
-        elif system_type == "Ternary (3 elements)":
-            el1 = st.selectbox("Element 1", ["Fe", "Ni", "Ti", "Al", "Co", "Cr"])
-            el2 = st.selectbox("Element 2", ["Ni", "Cr", "Al", "Ti", "Co", "Fe"])
-            el3 = st.selectbox("Element 3", ["Cr", "Ni", "Ti", "Al", "Mo", "V"])
-            chemsys = f"{el1}-{el2}-{el3}"
-        else:
-            chemsys = st.text_input("Enter chemical system (e.g., Fe-Ni-Cr)")
-
-        st.info(f"📌 System: **{chemsys}**")
+        st.markdown("**Structure Information:**")
+        st.write(f"- **Formula:** {structure.composition.reduced_formula}")
+        st.write(f"- **Number of atoms:** {len(structure)}")
+        st.write(f"- **Lattice type:** {struct_data['lattice'].__class__.__name__}")
+        st.write(f"- **Volume:** {structure.volume:.2f} Å³")
+        st.write(f"- **Density:** {structure.density:.2f} g/cm³")
 
     with col2:
-        metallic_only = st.checkbox("Metallic materials only (band gap = 0)", value=True)
-        stable_only = st.checkbox("Stable materials only", value=False)
-        max_results = st.slider("Maximum results", 10, 500, 100)
+        st.markdown("**Atomic Positions:**")
+        coords_df = pd.DataFrame({
+            "Element": [str(site.specie) for site in structure],
+            "x": [site.frac_coords[0] for site in structure],
+            "y": [site.frac_coords[1] for site in structure],
+            "z": [site.frac_coords[2] for site in structure]
+        })
+        st.dataframe(coords_df, use_container_width=True)
 
-    if st.button("🔍 Download Data", type="primary"):
-        from mp_api.client import MPRester
+    st.markdown("---")
 
-        with st.spinner(f"Downloading {chemsys} data from Materials Project..."):
-            try:
-                all_data = []
+    # Convert to graph
+    st.subheader("🔄 Step 1: Convert Structure to Graph")
 
-                with MPRester(api_key) as mpr:
-                    search_kwargs = {
-                        "chemsys": chemsys,
-                        "fields": ["material_id", "formula_pretty", "composition",
-                                  "energy_per_atom", "formation_energy_per_atom",
-                                  "energy_above_hull", "band_gap", "is_stable",
-                                  "volume", "density", "nsites", "symmetry"]
-                    }
+    with st.spinner("Creating graph representation..."):
+        graph = structure_to_graph(structure, cutoff=cutoff, max_neighbors=max_neighbors)
 
-                    if metallic_only:
-                        search_kwargs["band_gap"] = (0, 0)
+    col1, col2, col3, col4 = st.columns(4)
 
-                    if stable_only:
-                        search_kwargs["is_stable"] = True
+    with col1:
+        st.metric("Nodes (Atoms)", graph.num_nodes)
+    with col2:
+        st.metric("Edges (Bonds)", graph.num_edges)
+    with col3:
+        avg_degree = graph.num_edges / graph.num_nodes if graph.num_nodes > 0 else 0
+        st.metric("Avg Neighbors", f"{avg_degree:.1f}")
+    with col4:
+        st.metric("Feature Dim", graph.x.shape[-1] if len(graph.x.shape) > 0 else 1)
 
-                    docs = mpr.materials.summary.search(**search_kwargs)
+    with st.expander("📊 Detailed Graph Statistics"):
+        st.markdown("**Graph Properties:**")
+        stats = get_graph_stats(graph)
 
-                    if not docs:
-                        st.warning(f"No materials found for {chemsys}")
-                        st.stop()
+        # Edge distance distribution
+        if graph.num_edges > 0:
+            st.markdown("**Edge Length Distribution:**")
+            edge_distances = graph.edge_attr.squeeze().numpy()
+            fig = px.histogram(edge_distances, nbins=20,
+                             labels={"value": "Bond Distance (Å)", "count": "Frequency"},
+                             title="Distribution of Interatomic Distances")
+            st.plotly_chart(fig, use_container_width=True)
 
-                    # Limit results
-                    docs = docs[:max_results]
+    st.markdown("---")
 
-                    st.success(f"✅ Found {len(docs)} materials")
+    # Run through model
+    st.subheader("🧠 Step 2: GNN Forward Pass")
 
-                    progress_bar = st.progress(0)
-                    for i, doc in enumerate(docs):
-                        mat_data = {
-                            "material_id": doc.material_id,
-                            "formula": doc.formula_pretty,
-                            "system": chemsys,
-                            "energy_per_atom": doc.energy_per_atom,
-                            "formation_energy": doc.formation_energy_per_atom,
-                            "energy_above_hull": doc.energy_above_hull,
-                            "band_gap": doc.band_gap,
-                            "is_stable": doc.is_stable,
-                            "volume": doc.volume,
-                            "density": doc.density,
-                            "nsites": doc.nsites,
-                        }
+    # Create model
+    with st.spinner("Initializing model..."):
+        model = CGCNN(
+            node_feature_dim=node_dim,
+            edge_feature_dim=1,
+            hidden_dim=hidden_dim,
+            n_conv=n_conv,
+            n_hidden=n_hidden,
+            output_dim=1
+        )
+        model.eval()
 
-                        if doc.volume and doc.nsites:
-                            mat_data["volume_per_atom"] = doc.volume / doc.nsites
+    # Make prediction
+    with st.spinner("Running prediction..."):
+        with torch.no_grad():
+            prediction = model(graph)
 
-                        if hasattr(doc, 'symmetry') and doc.symmetry:
-                            mat_data["space_group"] = doc.symmetry.number
-                            mat_data["crystal_system"] = doc.symmetry.crystal_system
+    col1, col2 = st.columns([2, 1])
 
-                        # Extract composition fractions
-                        if hasattr(doc, 'composition'):
-                            elements = chemsys.split('-')
-                            for element in elements:
-                                frac = doc.composition.get_atomic_fraction(element)
-                                mat_data[f"frac_{element}"] = frac
+    with col1:
+        st.success(f"✅ Prediction complete!")
 
-                        all_data.append(mat_data)
-                        progress_bar.progress((i + 1) / len(docs))
+        # Show prediction (note: untrained model, so random)
+        st.markdown("**Model Output:**")
+        st.metric("Predicted Value", f"{prediction.item():.4f}")
 
-                # Create DataFrame
-                df = pd.DataFrame(all_data)
+        st.markdown("""
+        <div class="demo-box">
+        <strong>⚠️ Note:</strong> This is an <strong>untrained</strong> model with random weights,
+        so the prediction has no physical meaning. With proper training on labeled data
+        (e.g., DFT-calculated formation energies), the model would learn to make accurate predictions.
+        </div>
+        """, unsafe_allow_html=True)
 
-                # Save to file
-                filename = f"{chemsys.replace('-', '_')}_alloys.csv"
-                df.to_csv(filename, index=False)
+    with col2:
+        st.markdown("**Processing Steps:**")
+        st.write("1. ✅ Graph construction")
+        st.write("2. ✅ Node embedding")
+        st.write(f"3. ✅ {n_conv}x convolution")
+        st.write("4. ✅ Global pooling")
+        st.write("5. ✅ MLP prediction")
 
-                st.success(f"✅ Downloaded {len(df)} materials")
-                st.success(f"💾 Saved to: {filename}")
+    st.markdown("---")
 
-                # Show preview
-                st.subheader("📋 Data Preview")
-                st.dataframe(df.head(10), use_container_width=True)
+    # Batch prediction demo
+    st.subheader("📦 Step 3: Batch Prediction")
 
-                # Summary stats
-                st.subheader("📊 Summary Statistics")
-                col1, col2, col3, col4 = st.columns(4)
+    st.markdown("GNNs can efficiently process multiple structures in parallel:")
 
-                with col1:
-                    st.metric("Total Materials", len(df))
-                with col2:
-                    stable = df['is_stable'].sum()
-                    st.metric("Stable", f"{stable} ({stable/len(df)*100:.1f}%)")
-                with col3:
-                    near_stable = (df['energy_above_hull'] < 0.1).sum()
-                    st.metric("Near-Stable", f"{near_stable}")
-                with col4:
-                    st.metric("Avg Density", f"{df['density'].mean():.2f} g/cm³")
+    # Create multiple structures
+    batch_structures = [
+        Structure(Lattice.cubic(2.87), ["Fe"], [[0, 0, 0]]),
+        Structure(Lattice.cubic(3.61), ["Cu"], [[0, 0, 0]]),
+        Structure(Lattice.cubic(3.52), ["Ni"], [[0, 0, 0]]),
+        Structure(Lattice.cubic(4.05), ["Al"], [[0, 0, 0]]),
+    ]
 
-            except Exception as e:
-                st.error(f"Error downloading data: {e}")
+    # Convert to graphs
+    from torch_geometric.data import Batch
+    graphs = [structure_to_graph(s, cutoff=cutoff, max_neighbors=max_neighbors)
+              for s in batch_structures]
+    batch = Batch.from_data_list(graphs)
 
-# ============================================================================
-# EXPLORE DATA PAGE
-# ============================================================================
-elif page == "📊 Explore Data":
-    st.header("Explore Alloy Data")
+    # Batch prediction
+    with torch.no_grad():
+        batch_predictions = model(batch)
 
-    # Load data
-    csv_files = list(Path('.').glob('*.csv'))
+    # Display results
+    results_df = pd.DataFrame({
+        "Structure": ["Fe (BCC)", "Cu (FCC)", "Ni (FCC)", "Al (FCC)"],
+        "Formula": [s.composition.reduced_formula for s in batch_structures],
+        "Atoms": [len(s) for s in batch_structures],
+        "Prediction": batch_predictions.squeeze().numpy()
+    })
 
-    if not csv_files:
-        st.warning("No data files found. Go to 'Download Data' first!")
-        st.stop()
+    st.dataframe(results_df, use_container_width=True)
 
-    selected_file = st.selectbox("Select dataset", [f.name for f in csv_files])
+    fig = px.bar(results_df, x="Structure", y="Prediction",
+                title="Batch Predictions for Different Structures",
+                color="Prediction",
+                color_continuous_scale="viridis")
+    st.plotly_chart(fig, use_container_width=True)
 
-    df = pd.read_csv(selected_file)
+    st.info("""
+    💡 **Practical Use Cases:**
+    - Screen thousands of candidate materials
+    - Predict properties for hypothetical structures
+    - Guide experimental synthesis
+    - Accelerate materials discovery
+    """)
 
-    st.success(f"✅ Loaded {len(df)} materials from {selected_file}")
+elif model_mode == "🔮 Prediction (Coming Soon)":
+    st.header("🔮 Property Prediction (Coming Soon)")
 
-    # Tabs for different views
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Data Table", "📈 Visualizations", "🔗 Correlations", "📊 Statistics"])
+    st.markdown("""
+    <div class="info-box">
+    <h3>🚧 Under Development</h3>
+
+    This mode will allow you to:
+
+    1. **Upload crystal structures** (CIF, POSCAR files)
+    2. **Query Materials Project** by material ID
+    3. **Select pre-trained models** for different properties
+    4. **Get predictions** with uncertainty estimates
+    5. **Download results** as CSV
+
+    <strong>Available Properties (Planned):</strong>
+    - Formation Energy (eV/atom)
+    - Band Gap (eV)
+    - Bulk Modulus (GPa)
+    - Shear Modulus (GPa)
+    - Magnetic Moment (μB)
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Preview interface
+    st.subheader("🎨 Interface Preview")
+
+    tab1, tab2, tab3 = st.tabs(["📤 Upload", "🔍 Materials Project", "📊 Results"])
 
     with tab1:
-        st.subheader("Data Table")
-
-        # Filters
-        col1, col2 = st.columns(2)
-        with col1:
-            if 'is_stable' in df.columns:
-                show_stable_only = st.checkbox("Show stable materials only")
-                if show_stable_only:
-                    df = df[df['is_stable'] == True]
-
-        with col2:
-            if 'energy_above_hull' in df.columns:
-                max_hull = st.slider("Max energy above hull (eV)", 0.0, 1.0, 0.5, 0.05)
-                df = df[df['energy_above_hull'] <= max_hull]
-
-        # Check if dataframe is empty after filtering
-        if len(df) == 0:
-            st.warning("⚠️ No materials match your filter criteria. Try adjusting the filters above.")
-            st.info("💡 Tip: Increase 'Max energy above hull' or uncheck 'Show stable materials only'")
-        else:
-            st.success(f"✅ Showing {len(df)} materials")
-            st.dataframe(df, use_container_width=True, height=400)
-
-            # Download filtered data
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Filtered Data as CSV",
-                data=csv,
-                file_name=f"filtered_{selected_file}",
-                mime="text/csv"
-            )
+        st.markdown("**Upload Structure File**")
+        st.file_uploader("Choose CIF or POSCAR file", type=['cif', 'poscar', 'vasp'], disabled=True)
+        st.button("🚀 Predict Properties", disabled=True, type="primary")
 
     with tab2:
-        st.subheader("Interactive Visualizations")
-
-        # Check if dataframe is empty
-        if len(df) == 0:
-            st.warning("⚠️ No data to visualize after applying filters. Try adjusting the filters above.")
-            st.stop()
-
-        # Determine composition columns
-        comp_cols = [col for col in df.columns if col.startswith('frac_')]
-
-        if len(comp_cols) >= 2:
-            col1, col2 = st.columns(2)
-
-            with col1:
-                # Formation energy vs composition
-                x_col = st.selectbox("X-axis (composition)", comp_cols, index=0)
-
-                fig = px.scatter(df, x=x_col, y='formation_energy',
-                               color='energy_above_hull',
-                               hover_data=['formula', 'material_id'],
-                               title='Formation Energy vs Composition',
-                               labels={x_col: x_col.replace('frac_', '').title() + ' Fraction',
-                                      'formation_energy': 'Formation Energy (eV/atom)',
-                                      'energy_above_hull': 'E above hull (eV)'},
-                               color_continuous_scale='RdYlGn_r',
-                               height=500)
-                st.plotly_chart(fig, use_container_width=True)
-
-            with col2:
-                # Density vs composition
-                fig = px.scatter(df, x=x_col, y='density',
-                               color='is_stable',
-                               hover_data=['formula', 'material_id'],
-                               title='Density vs Composition',
-                               labels={x_col: x_col.replace('frac_', '').title() + ' Fraction',
-                                      'density': 'Density (g/cm³)'},
-                               height=500)
-                st.plotly_chart(fig, use_container_width=True)
-
-        # Energy distributions
-        col1, col2 = st.columns(2)
-
-        with col1:
-            fig = px.histogram(df, x='formation_energy',
-                             title='Formation Energy Distribution',
-                             labels={'formation_energy': 'Formation Energy (eV/atom)'},
-                             color_discrete_sequence=['#1f77b4'])
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col2:
-            fig = px.histogram(df, x='energy_above_hull',
-                             title='Stability Distribution',
-                             labels={'energy_above_hull': 'Energy Above Hull (eV/atom)'},
-                             color_discrete_sequence=['#ff7f0e'])
-            fig.add_vline(x=0.1, line_dash="dash", line_color="red",
-                         annotation_text="Likely Synthesizable")
-            st.plotly_chart(fig, use_container_width=True)
-
-        # Crystal system distribution
-        if 'crystal_system' in df.columns:
-            fig = px.histogram(df, x='crystal_system',
-                             title='Crystal System Distribution',
-                             color_discrete_sequence=['#2ca02c'])
-            st.plotly_chart(fig, use_container_width=True)
+        st.markdown("**Query Materials Project**")
+        st.text_input("Material ID (e.g., mp-149):", disabled=True)
+        st.selectbox("Property to predict:",
+                    ["Formation Energy", "Band Gap", "Bulk Modulus"],
+                    disabled=True)
+        st.button("🔍 Fetch and Predict", disabled=True, type="primary")
 
     with tab3:
-        st.subheader("Property Correlations")
+        st.markdown("**Prediction Results (Example)**")
 
-        # Check if dataframe is empty
-        if len(df) == 0:
-            st.warning("⚠️ No data to analyze after applying filters. Try adjusting the filters above.")
-            st.stop()
-
-        # Select numeric columns
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        numeric_cols = [col for col in numeric_cols if not col.startswith('space_group')]
-
-        if len(numeric_cols) > 1:
-            # Correlation matrix
-            corr = df[numeric_cols].corr()
-
-            fig = px.imshow(corr,
-                           labels=dict(color="Correlation"),
-                           x=corr.columns,
-                           y=corr.columns,
-                           color_continuous_scale='RdBu_r',
-                           zmin=-1, zmax=1,
-                           title="Property Correlation Matrix")
-            fig.update_layout(height=600)
-            st.plotly_chart(fig, use_container_width=True)
-
-            # Pairplot for selected properties
-            st.subheader("Scatter Matrix")
-            selected_props = st.multiselect(
-                "Select properties for scatter matrix",
-                numeric_cols,
-                default=numeric_cols[:min(4, len(numeric_cols))]
-            )
-
-            if len(selected_props) >= 2:
-                fig = px.scatter_matrix(df[selected_props],
-                                       title="Property Relationships",
-                                       height=800)
-                st.plotly_chart(fig, use_container_width=True)
-
-    with tab4:
-        st.subheader("Statistical Summary")
-
-        if len(df) == 0:
-            st.warning("⚠️ No data to display after applying filters. Try adjusting the filters above.")
-        else:
-            st.dataframe(df.describe(), use_container_width=True)
-
-            # Key insights
-            st.markdown("### 🔍 Key Insights")
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.markdown("**Most Stable Material**")
-                if 'energy_above_hull' in df.columns and len(df) > 0:
-                    most_stable = df.loc[df['energy_above_hull'].idxmin()]
-                    st.write(f"Formula: **{most_stable['formula']}**")
-                    st.write(f"E above hull: {most_stable['energy_above_hull']:.4f} eV/atom")
-                else:
-                    st.write("No data available")
-
-            with col2:
-                st.markdown("**Highest Density**")
-                if 'density' in df.columns and len(df) > 0:
-                    highest_density = df.loc[df['density'].idxmax()]
-                    st.write(f"Formula: **{highest_density['formula']}**")
-                    st.write(f"Density: {highest_density['density']:.2f} g/cm³")
-                else:
-                    st.write("No data available")
-
-            with col3:
-                st.markdown("**Stability Summary**")
-                if 'is_stable' in df.columns and len(df) > 0:
-                    stable_count = df['is_stable'].sum()
-                    near_stable = (df['energy_above_hull'] < 0.1).sum()
-                    st.write(f"Stable: {stable_count} ({stable_count/len(df)*100:.1f}%)")
-                    st.write(f"Near-stable: {near_stable} ({near_stable/len(df)*100:.1f}%)")
-                else:
-                    st.write("No data available")
-
-# ============================================================================
-# TRAIN MODELS PAGE
-# ============================================================================
-elif page == "🤖 Train Models":
-    st.header("Train ML Models")
-
-    # Load data
-    csv_files = list(Path('.').glob('*.csv'))
-
-    if not csv_files:
-        st.warning("No data files found. Go to 'Download Data' first!")
-        st.stop()
-
-    selected_file = st.selectbox("Select dataset", [f.name for f in csv_files])
-    df = pd.read_csv(selected_file)
-
-    if len(df) == 0:
-        st.error("❌ The selected dataset is empty!")
-        st.stop()
-
-    if len(df) < 5:
-        st.warning(f"⚠️ Dataset only has {len(df)} materials. You need at least 5 materials to train models.")
-        st.info("💡 Tip: Download more data from 'Download Data' page")
-        st.stop()
-
-    st.success(f"✅ Loaded {len(df)} materials")
-
-    st.markdown("---")
-
-    # Model configuration
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Features")
-        feature_cols = [col for col in df.columns if col.startswith('frac_')]
-
-        if 'density' in df.columns:
-            add_density = st.checkbox("Include density as feature", value=False)
-            if add_density:
-                feature_cols.append('density')
-
-        st.write("Selected features:")
-        for col in feature_cols:
-            st.write(f"- {col}")
-
-    with col2:
-        st.subheader("Target")
-        target = st.selectbox("Target property", ['formation_energy', 'energy_above_hull', 'density'])
-
-        test_size = st.slider("Test set size (%)", 10, 40, 20) / 100
-
-    if st.button("🚀 Train Models", type="primary"):
-        from sklearn.model_selection import train_test_split
-        from sklearn.linear_model import LinearRegression
-        from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-        from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-
-        with st.spinner("Training models..."):
-            # Prepare data
-            X = df[feature_cols].values
-            y = df[target].values
-
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=42
-            )
-
-            # Train multiple models
-            models = {
-                "Linear Regression": LinearRegression(),
-                "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
-                "Gradient Boosting": GradientBoostingRegressor(n_estimators=100, random_state=42)
-            }
-
-            results = {}
-
-            progress_bar = st.progress(0)
-            for i, (name, model) in enumerate(models.items()):
-                model.fit(X_train, y_train)
-
-                train_pred = model.predict(X_train)
-                test_pred = model.predict(X_test)
-
-                results[name] = {
-                    "train_r2": r2_score(y_train, train_pred),
-                    "test_r2": r2_score(y_test, test_pred),
-                    "test_mae": mean_absolute_error(y_test, test_pred),
-                    "test_rmse": np.sqrt(mean_squared_error(y_test, test_pred)),
-                    "predictions": test_pred
-                }
-
-                progress_bar.progress((i + 1) / len(models))
-
-        st.success("✅ Models trained successfully!")
-
-        # Results
-        st.subheader("📊 Model Performance")
-
-        results_df = pd.DataFrame({
-            "Model": list(results.keys()),
-            "Train R²": [results[m]["train_r2"] for m in results.keys()],
-            "Test R²": [results[m]["test_r2"] for m in results.keys()],
-            "Test MAE": [results[m]["test_mae"] for m in results.keys()],
-            "Test RMSE": [results[m]["test_rmse"] for m in results.keys()]
+        # Mock results table
+        mock_results = pd.DataFrame({
+            "Property": ["Formation Energy", "Band Gap", "Bulk Modulus"],
+            "Predicted Value": [-2.34, 0.15, 180.5],
+            "Unit": ["eV/atom", "eV", "GPa"],
+            "Uncertainty": [0.12, 0.05, 15.2]
         })
 
-        st.dataframe(results_df.style.highlight_max(subset=["Train R²", "Test R²"], color='lightgreen')
-                                     .highlight_min(subset=["Test MAE", "Test RMSE"], color='lightgreen'),
-                    use_container_width=True)
-
-        # Visualization
-        st.subheader("📈 Predictions vs Actual")
-
-        fig = make_subplots(rows=1, cols=3,
-                           subplot_titles=list(results.keys()))
-
-        for i, (name, res) in enumerate(results.items(), 1):
-            fig.add_trace(
-                go.Scatter(x=y_test, y=res["predictions"],
-                          mode='markers',
-                          name=name,
-                          marker=dict(size=8, opacity=0.6)),
-                row=1, col=i
-            )
-
-            # Perfect prediction line
-            min_val, max_val = y_test.min(), y_test.max()
-            fig.add_trace(
-                go.Scatter(x=[min_val, max_val], y=[min_val, max_val],
-                          mode='lines',
-                          name='Perfect',
-                          line=dict(dash='dash', color='red'),
-                          showlegend=(i==1)),
-                row=1, col=i
-            )
-
-            fig.update_xaxes(title_text=f"Actual {target}", row=1, col=i)
-            fig.update_yaxes(title_text=f"Predicted {target}", row=1, col=i)
-
-        fig.update_layout(height=400, showlegend=True)
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Best model
-        best_model = max(results.items(), key=lambda x: x[1]["test_r2"])
-        st.success(f"🏆 Best Model: **{best_model[0]}** (Test R² = {best_model[1]['test_r2']:.4f})")
-
-# ============================================================================
-# DISCOVER ALLOYS PAGE
-# ============================================================================
-elif page == "🔮 Discover Alloys":
-    st.header("Discover Novel Alloy Candidates")
-
-    st.info("🚧 This feature is under development. It will allow you to:")
-    st.markdown("""
-    - Generate novel alloy compositions
-    - Predict properties using trained ML models
-    - Rank candidates by predicted stability
-    - Export promising candidates for experimental validation
-    """)
+        st.dataframe(mock_results, use_container_width=True)
+        st.download_button("📥 Download Results", "mock data", disabled=True)
 
     st.markdown("---")
 
-    st.subheader("Coming Soon!")
     st.markdown("""
-    **Features in development:**
-    1. **Composition Generator**: Create candidate alloys in specified composition space
-    2. **Property Predictor**: Use trained models to predict formation energy, stability
-    3. **Multi-objective Optimization**: Balance multiple properties simultaneously
-    4. **Ranking System**: Sort by stability, cost, manufacturability
-    5. **Export**: Download top candidates for experimental testing
+    **To enable this feature:**
+    1. Train GNN models on Materials Project data
+    2. Save trained model checkpoints
+    3. Implement prediction interface
+    4. Add uncertainty quantification
+
+    **Estimated completion:** 2-3 weeks
     """)
-
-    # Placeholder for future functionality
-    st.markdown("### Preview: Candidate Generation")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.selectbox("Base element", ["Fe", "Ti", "Ni", "Al"], disabled=True)
-        st.selectbox("Alloying element", ["Ni", "Al", "Cr", "Co"], disabled=True)
-
-    with col2:
-        st.slider("Composition range (%)", 0, 100, (20, 80), disabled=True)
-        st.slider("Number of candidates", 10, 100, 50, disabled=True)
-
-    st.button("🔮 Generate Candidates", disabled=True, type="primary")
 
 # Footer
 st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: gray;'>"
-    "ML Alloy Development Dashboard | "
-    "Powered by Materials Project & Streamlit | "
-    "🔬 Discover the Future of Alloys"
-    "</div>",
-    unsafe_allow_html=True
-)
+st.markdown("""
+<div style='text-align: center; color: gray;'>
+<strong>Digital Foundry Materials Science Toolkit</strong><br>
+GNN Property Predictor | Powered by PyTorch Geometric & Pymatgen<br>
+🧠 Leveraging 3D Crystal Structure for Accurate Property Prediction
+</div>
+""", unsafe_allow_html=True)

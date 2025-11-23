@@ -64,8 +64,8 @@ st.markdown("""
 This integrated platform provides powerful tools for materials discovery and analysis:
 """)
 
-# Two columns for currently available apps
-col1, col2 = st.columns(2)
+# Three columns for all available apps
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("""
@@ -86,6 +86,24 @@ with col1:
         st.switch_page("pages/1_Materials_Project_Explorer.py")
 
 with col2:
+    st.markdown("""
+    ### 🧠 GNN Property Predictor
+
+    **Deep learning on crystal structures**
+
+    - Graph Neural Networks (CGCNN)
+    - 3D structure-aware predictions
+    - Demo with example structures
+    - Interactive model visualization
+    - Element feature embeddings
+    - Batch processing
+
+    **Use Case:** Leverage 3D atomic structure for higher accuracy
+    """)
+    if st.button("🚀 Launch GNN Predictor", key="app2", use_container_width=True):
+        st.switch_page("pages/2_GNN_Property_Predictor.py")
+
+with col3:
     st.markdown("""
     ### 🔥 CALPHAD Tools
 
@@ -115,15 +133,18 @@ These tools work together for comprehensive materials design:
    ↓ Download materials data → CSV
    ↓ Train ML models for property predictions
 
-2. CALPHAD Tools (ESPEI)
+2. GNN Property Predictor
+   ↓ Process crystal structures → Graphs
+   ↓ Deep learning with 3D atomic information
+   ↓ Higher accuracy for structure-dependent properties
+
+3. CALPHAD Tools (ESPEI)
    ↓ Generate TDB files from MP data
    ↓ Calculate phase diagrams
    ↓ Add thermodynamic features to datasets
 
-Result: Complete materials characterization with ML + Thermodynamics!
+Result: Complete materials characterization with ML + GNN + Thermodynamics!
 ```
-
-**Coming Soon:** Advanced GNN-based property predictors
 """)
 
 # Feature highlights
@@ -141,10 +162,11 @@ with feature_col1:
     - 📊 Interactive visualizations
 
     **Machine Learning:**
-    - 🤖 Sklearn-based ML models
+    - 🤖 Sklearn-based ML models (Linear, RF, GBM)
+    - 🧠 Graph Neural Networks (CGCNN)
     - 🎯 Property prediction (formation energy, stability, density)
+    - 📊 3D structure-aware predictions
     - 📉 Training and evaluation metrics
-    - 📈 Model comparison (Linear, Random Forest, Gradient Boosting)
     """)
 
 with feature_col2:
