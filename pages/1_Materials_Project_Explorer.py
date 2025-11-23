@@ -301,7 +301,16 @@ elif page == "📥 Download Data":
                 df.to_csv(filename, index=False)
 
                 st.success(f"✅ Downloaded {len(df)} materials")
-                st.success(f"💾 Saved to: {filename}")
+
+                # Download button to save to user's computer
+                csv_data = df.to_csv(index=False)
+                st.download_button(
+                    label="💾 Download CSV to Your Computer",
+                    data=csv_data,
+                    file_name=filename,
+                    mime="text/csv",
+                    type="primary"
+                )
 
                 # Show preview
                 st.subheader("📋 Data Preview")
