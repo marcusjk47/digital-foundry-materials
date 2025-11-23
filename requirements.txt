@@ -18,6 +18,7 @@ scikit-learn==1.7.2
 
 # API and web requests
 requests==2.32.5
+mp-api>=0.41.0
 
 # Additional scientific computing (pycalphad dependencies)
 scipy>=1.13.0
