@@ -1,0 +1,53 @@
+{
+  "components": [
+    "CO",
+    "CR",
+    "VA"
+  ],
+  "phases": [
+    "FCC_A1"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0,
+      1.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "CO",
+          "CR"
+        ],
+        [
+          "VA"
+        ]
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.4666666666666667,
+          0.5333333333333333
+        ],
+        [
+          1.0
+        ]
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        27847.41927293097
+      ]
+    ]
+  ],
+  "reference": "mp-1227307",
+  "comment": "Formation energy data from Materials Project for Cr8Co7 in FCC_A1 phase"
+}

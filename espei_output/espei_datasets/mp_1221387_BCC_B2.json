@@ -1,0 +1,45 @@
+{
+  "components": [
+    "MO",
+    "W"
+  ],
+  "phases": [
+    "BCC_B2"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "MO",
+          "W"
+        ]
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.5,
+          0.5
+        ]
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        -43.493643534096485
+      ]
+    ]
+  ],
+  "reference": "mp-1221387",
+  "comment": "Formation energy data from Materials Project for MoW in BCC_B2 phase"
+}

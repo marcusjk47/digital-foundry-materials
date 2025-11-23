@@ -1,0 +1,45 @@
+{
+  "components": [
+    "CR",
+    "FE"
+  ],
+  "phases": [
+    "LIQUID"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "CR",
+          "FE"
+        ]
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.2,
+          0.8
+        ]
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        -8587.1917
+      ]
+    ]
+  ],
+  "reference": "mp-test-002",
+  "comment": "Formation energy data from Materials Project for Fe0.8Cr0.2 in LIQUID phase"
+}

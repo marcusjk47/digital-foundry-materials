@@ -1,0 +1,73 @@
+$ =============================================================================
+$ Al-Zn Binary System - Sample Thermodynamic Database
+$ Based on Mey (1993) assessment
+$ Simplified for educational purposes
+$ =============================================================================
+
+ELEMENT AL FCC_A1 26.9815 4577.3 28.3 !
+ELEMENT ZN HCP_A3 65.39 5657.0 41.6 !
+ELEMENT VA VACUUM 0 0 0 !
+
+$ -----------------------------------------------------------------------------
+$ GIBBS ENERGY FUNCTIONS - UNARY PHASES
+$ -----------------------------------------------------------------------------
+
+FUNCTION GHSERAL 298.15
+ -7976.15+137.093038*T-24.3671976*T*LN(T)
+ -.001884662*T**2-8.77664E-07*T**3+74092*T**(-1); 700 Y
+ -11276.24+223.048446*T-38.5844296*T*LN(T)+.018531982*T**2
+ -5.764227E-06*T**3+74092*T**(-1); 933.47 Y
+ -11278.378+188.684153*T-31.748192*T*LN(T)-1.230524E+28*T**(-9);
+ 2900 N !
+
+FUNCTION GHSERZN 298.15
+ -7285.787+118.470069*T-23.701314*T*LN(T)
+ -.001712034*T**2-1.264963E-06*T**3; 692.68 Y
+ -11070.559+172.345644*T-31.38*T*LN(T)+4.70657E+26*T**(-9);
+ 1700 N !
+
+$ -----------------------------------------------------------------------------
+$ PHASE DEFINITIONS
+$ -----------------------------------------------------------------------------
+
+TYPE_DEFINITION % SEQ *!
+
+$ FCC_A1 - Face-centered cubic (Al-rich)
+PHASE FCC_A1 %  1  1.0  !
+CONSTITUENT FCC_A1 :AL,ZN : !
+
+PARAMETER G(FCC_A1,AL;0) 298.15 +GHSERAL; 2900 N !
+PARAMETER G(FCC_A1,ZN;0) 298.15 +GHSERZN+2969.82-1.56968*T; 1700 N !
+PARAMETER G(FCC_A1,AL,ZN;0) 298.15 +10465-3.39259*T; 6000 N !
+
+$ HCP_A3 - Hexagonal close-packed (Zn-rich)
+PHASE HCP_A3 %  1  1.0  !
+CONSTITUENT HCP_A3 :AL,ZN : !
+
+PARAMETER G(HCP_A3,AL;0) 298.15 +GHSERAL+5481-1.8*T; 2900 N !
+PARAMETER G(HCP_A3,ZN;0) 298.15 +GHSERZN; 1700 N !
+PARAMETER G(HCP_A3,AL,ZN;0) 298.15 +18821-8.95255*T; 6000 N !
+
+$ LIQUID - Liquid phase
+PHASE LIQUID %  1  1.0  !
+CONSTITUENT LIQUID :AL,ZN : !
+
+PARAMETER G(LIQUID,AL;0) 298.15
+ +11005.029-11.841867*T+7.934E-20*T**7+GHSERAL; 933.47 Y
+ +10482.382-11.253974*T+1.231E+28*T**(-9)+GHSERAL; 2900 N !
+
+PARAMETER G(LIQUID,ZN;0) 298.15
+ +7157.213-10.29299*T-3.5896E-19*T**7+GHSERZN; 692.68 Y
+ +7450.168-10.737066*T-4.70657E+26*T**(-9)+GHSERZN; 1700 N !
+
+PARAMETER G(LIQUID,AL,ZN;0) 298.15 +10465-3.39259*T; 6000 N !
+
+$ =============================================================================
+$ END OF DATABASE
+$ =============================================================================
+
+$ Usage example:
+$ from pycalphad import Database
+$ db = Database('alzn_sample.tdb')
+$ print(db.elements)  # {'AL', 'ZN', 'VA'}
+$ print(db.phases.keys())  # dict_keys(['FCC_A1', 'HCP_A3', 'LIQUID'])

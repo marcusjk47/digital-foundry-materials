@@ -1,0 +1,49 @@
+{
+  "components": [
+    "CR",
+    "FE"
+  ],
+  "phases": {
+    "LIQUID": {
+      "sublattice_model": [
+        [
+          "CR",
+          "FE"
+        ]
+      ],
+      "sublattice_site_ratios": [
+        1.0
+      ]
+    },
+    "FCC_A1": {
+      "sublattice_model": [
+        [
+          "CR",
+          "FE"
+        ],
+        [
+          "VA"
+        ]
+      ],
+      "sublattice_site_ratios": [
+        1.0,
+        1.0
+      ]
+    },
+    "BCC_A2": {
+      "sublattice_model": [
+        [
+          "CR",
+          "FE"
+        ],
+        [
+          "VA"
+        ]
+      ],
+      "sublattice_site_ratios": [
+        1.0,
+        3.0
+      ]
+    }
+  }
+}

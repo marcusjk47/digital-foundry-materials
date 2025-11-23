@@ -1,0 +1,14 @@
+# ESPEI Configuration for Materials Project Data
+system:
+  phase_models: espei_fix_test/phase_models.json
+  datasets: espei_fix_test/espei_datasets
+
+generate_parameters:
+  excess_model: linear
+  ref_state: SGTE91
+  ridge_alpha: null
+  aicc_penalty_factor: null
+
+output:
+  verbosity: 2
+  output_db: espei_fix_test/test_multiphase.tdb

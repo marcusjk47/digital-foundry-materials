@@ -1,0 +1,45 @@
+{
+  "components": [
+    "AL",
+    "CR"
+  ],
+  "phases": [
+    "LIQUID"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "AL",
+          "CR"
+        ]
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.75,
+          0.25
+        ]
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        -15112.747260191807
+      ]
+    ]
+  ],
+  "reference": "mp-867780",
+  "comment": "Formation energy data from Materials Project for Al3Cr"
+}

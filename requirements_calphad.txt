@@ -1,0 +1,29 @@
+# CALPHAD Tools for Phase Diagram Calculations
+# Install with: pip install -r requirements_calphad.txt
+# Or with conda: conda install -c conda-forge pycalphad espei scheil
+
+# Core CALPHAD
+pycalphad>=0.11.0
+
+# Parameter optimization and uncertainty quantification
+espei>=0.8.0
+
+# Solidification simulations
+scheil>=0.2.0
+
+# Dependencies (usually installed automatically)
+numpy>=1.23.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+xarray>=2023.0.0
+symengine>=0.9.0  # For fast symbolic math
+pyparsing>=3.0.0  # TDB file parsing
+tinydb>=4.7.0  # Database storage
+
+# Optional but recommended
+numba>=0.56.0  # JIT compilation for speed
+dask>=2023.0.0  # Parallel computing
+
+# For web app integration
+streamlit>=1.28.0
+plotly>=5.17.0

@@ -1,0 +1,36 @@
+# Streamlit and core web framework
+streamlit==1.51.0
+
+# CALPHAD and thermodynamic calculations
+pycalphad==0.11.1
+espei==0.9.0
+
+# Data processing
+pandas==2.3.3
+numpy==2.3.4
+
+# Visualization
+plotly==6.4.0
+matplotlib>=3.8.0
+
+# Machine Learning
+scikit-learn==1.7.2
+
+# API and web requests
+requests==2.32.5
+
+# Additional scientific computing (pycalphad dependencies)
+scipy>=1.13.0
+symengine>=0.13.0
+xarray>=2024.0.0
+
+# For ESPEI
+dask[complete]>=2024.0.0
+distributed>=2024.0.0
+tinydb>=4.0.0
+pyyaml>=6.0.0
+cerberus>=1.3.0
+
+# Utilities
+python-dateutil>=2.9.0
+pytz>=2024.0

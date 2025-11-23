@@ -1,0 +1,53 @@
+{
+  "components": [
+    "CO",
+    "CR",
+    "VA"
+  ],
+  "phases": [
+    "BCC_A2"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0,
+      3.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "CO",
+          "CR"
+        ],
+        [
+          "VA"
+        ]
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.3333333333333333,
+          0.6666666666666666
+        ],
+        [
+          1.0
+        ]
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        27782.27751209177
+      ]
+    ]
+  ],
+  "reference": "mp-1077706",
+  "comment": "Formation energy data from Materials Project for Cr2Co in BCC_A2 phase"
+}

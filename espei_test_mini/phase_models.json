@@ -1,0 +1,19 @@
+{
+  "components": [
+    "CR",
+    "FE"
+  ],
+  "phases": {
+    "LIQUID": {
+      "sublattice_model": [
+        [
+          "CR",
+          "FE"
+        ]
+      ],
+      "sublattice_site_ratios": [
+        1.0
+      ]
+    }
+  }
+}

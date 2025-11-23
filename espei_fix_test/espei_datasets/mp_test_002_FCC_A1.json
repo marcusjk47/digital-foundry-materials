@@ -1,0 +1,52 @@
+{
+  "components": [
+    "CR",
+    "FE"
+  ],
+  "phases": [
+    "FCC_A1"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0,
+      1.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "CR",
+          "FE"
+        ]
+      ],
+      [
+        "VA"
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.2,
+          0.8
+        ]
+      ],
+      [
+        1.0
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        -8587.1917
+      ]
+    ]
+  ],
+  "reference": "mp-test-002",
+  "comment": "Formation energy data from Materials Project for Fe0.8Cr0.2 in FCC_A1 phase"
+}

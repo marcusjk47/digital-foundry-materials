@@ -1,0 +1,53 @@
+{
+  "components": [
+    "CO",
+    "CR",
+    "VA"
+  ],
+  "phases": [
+    "BCC_A2"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0,
+      3.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "CO",
+          "CR"
+        ],
+        [
+          "VA"
+        ]
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.25,
+          0.75
+        ],
+        [
+          1.0
+        ]
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        24326.250611096595
+      ]
+    ]
+  ],
+  "reference": "mp-1025503",
+  "comment": "Formation energy data from Materials Project for Cr3Co in BCC_A2 phase"
+}

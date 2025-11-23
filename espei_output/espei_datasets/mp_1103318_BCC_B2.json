@@ -1,0 +1,45 @@
+{
+  "components": [
+    "MO",
+    "W"
+  ],
+  "phases": [
+    "BCC_B2"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "MO",
+          "W"
+        ]
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.08333333333333331,
+          0.9166666666666667
+        ]
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        165228.57888881673
+      ]
+    ]
+  ],
+  "reference": "mp-1103318",
+  "comment": "Formation energy data from Materials Project for MoW11 in BCC_B2 phase"
+}

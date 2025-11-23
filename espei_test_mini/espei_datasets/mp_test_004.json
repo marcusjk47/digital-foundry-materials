@@ -1,0 +1,41 @@
+{
+  "components": [
+    "CR",
+    "FE"
+  ],
+  "phases": [
+    "LIQUID"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0
+    ],
+    "sublattice_configurations": [
+      [
+        "CR",
+        "FE"
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        0.4,
+        0.6
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        -14665.7656
+      ]
+    ]
+  ],
+  "reference": "mp-test-004",
+  "comment": "Formation energy data from Materials Project for Fe0.6Cr0.4"
+}

@@ -1,0 +1,20 @@
+========================================
+  QUICK START - COPY & PASTE THIS
+========================================
+
+1. Press Windows Key + R
+2. Type: cmd
+3. Press Enter
+4. Copy and paste this entire line:
+
+cd "C:\Users\marcu\OneDrive\Desktop\Digital Foundry\ML-Alloy-Project" && mp-alloy-env\Scripts\activate.bat
+
+5. Press Enter
+
+You should see (mp-alloy-env) in your prompt!
+
+Then you can:
+  python test_mp_connection.py
+  python download_first_dataset.py
+
+========================================

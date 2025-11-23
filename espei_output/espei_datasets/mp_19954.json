@@ -1,0 +1,45 @@
+{
+  "components": [
+    "AL",
+    "CR"
+  ],
+  "phases": [
+    "LIQUID"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "AL",
+          "CR"
+        ]
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.6153846153846154,
+          0.3846153846153846
+        ]
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        -4621.803727372739
+      ]
+    ]
+  ],
+  "reference": "mp-19954",
+  "comment": "Formation energy data from Materials Project for Al8Cr5"
+}

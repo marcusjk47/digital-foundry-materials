@@ -1,0 +1,45 @@
+{
+  "components": [
+    "AL",
+    "CR"
+  ],
+  "phases": [
+    "LIQUID"
+  ],
+  "solver": {
+    "mode": "manual",
+    "sublattice_site_ratios": [
+      1.0
+    ],
+    "sublattice_configurations": [
+      [
+        [
+          "AL",
+          "CR"
+        ]
+      ]
+    ],
+    "sublattice_occupancies": [
+      [
+        [
+          0.3333333333333333,
+          0.6666666666666666
+        ]
+      ]
+    ]
+  },
+  "conditions": {
+    "P": 101325,
+    "T": 298.15
+  },
+  "output": "HM_FORM",
+  "values": [
+    [
+      [
+        7013.08548932702
+      ]
+    ]
+  ],
+  "reference": "mp-1228923",
+  "comment": "Formation energy data from Materials Project for AlCr2"
+}
