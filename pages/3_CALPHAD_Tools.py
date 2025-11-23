@@ -2455,16 +2455,33 @@ elif page == "🔬 Create TDB from MP Data":
                             tdb_content = f.read()
                         st.code(tdb_content[:2000] + ("\n..." if len(tdb_content) > 2000 else ""), language='text')
 
+                    # Download button to save TDB file to user's computer
+                    st.markdown("---")
+                    with open(tdb_path, 'r') as f:
+                        tdb_file_content = f.read()
+
+                    st.download_button(
+                        label="💾 Download TDB File to Your Computer",
+                        data=tdb_file_content,
+                        file_name=tdb_filename,
+                        mime="text/plain",
+                        type="primary",
+                        help="Download the generated TDB file to use on your computer or in other CALPHAD tools"
+                    )
+
                     st.markdown("---")
                     st.markdown("### 🎯 Next Steps")
 
                     st.markdown(f"""
                     **Use your new TDB file:**
 
-                    1. **Copy to calphad_databases folder:**
-                       - Move `{tdb_path}` to `calphad_databases/` folder
+                    1. **Download to your computer:**
+                       - Click "💾 Download TDB File" button above
+                       - Save to your computer for permanent storage
+                       - Use in other CALPHAD tools (Thermo-Calc, PANDAT, etc.)
 
-                    2. **Load in CALPHAD app:**
+                    2. **Use within this app (same session):**
+                       - Click "📋 Copy to calphad_databases folder" button below
                        - Go to "📁 Load Database" page
                        - Select your new TDB file
 
