@@ -86,7 +86,7 @@ st.sidebar.title("⚙️ Model Configuration")
 
 model_mode = st.sidebar.radio(
     "Operation Mode:",
-    ["🎯 Demo Mode", "📚 Architecture Info", "🔮 Prediction (Coming Soon)"],
+    ["🎯 Demo Mode", "📚 Architecture Info", "🎓 Train Model", "🔮 Prediction (Coming Soon)"],
     help="Demo mode shows GNN capabilities with example structures"
 )
 
@@ -485,6 +485,433 @@ elif model_mode == "🎯 Demo Mode":
     - Guide experimental synthesis
     - Accelerate materials discovery
     """)
+
+elif model_mode == "🎓 Train Model":
+    st.header("🎓 Train GNN Model")
+
+    st.markdown("""
+    <div class="info-box">
+    <h3>📖 Training Overview</h3>
+
+    Train a CGCNN model to predict materials properties from crystal structures.
+
+    **Training Process:**
+    1. **Collect Data:** Fetch structures + properties from Materials Project
+    2. **Prepare Dataset:** Convert structures to graphs, split train/val/test
+    3. **Configure Model:** Set architecture parameters
+    4. **Train:** Run training loop with validation
+    5. **Evaluate:** Test on held-out test set
+    6. **Deploy:** Use trained model for predictions
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Training workflow tabs
+    tab1, tab2, tab3 = st.tabs(["1️⃣ Data Collection", "2️⃣ Training", "3️⃣ Evaluation"])
+
+    with tab1:
+        st.subheader("📥 Collect Training Data from Materials Project")
+
+        # Check for API key
+        api_key = os.environ.get("MP_API_KEY")
+        if not api_key:
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+                api_key = os.environ.get("MP_API_KEY")
+            except:
+                pass
+
+        if not api_key:
+            st.error("⚠️ **Materials Project API Key Required**")
+            st.markdown("""
+            To collect training data, you need a Materials Project API key:
+
+            1. Get your free API key at https://next-gen.materialsproject.org/api
+            2. Add it to your environment:
+               - **Streamlit Cloud:** Add `MP_API_KEY` in App Settings → Secrets
+               - **Local:** Create `.env` file with `MP_API_KEY=your_key_here`
+            """)
+            st.stop()
+
+        st.success("✅ Materials Project API Connected")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Dataset Configuration**")
+
+            data_mode = st.radio(
+                "Data selection:",
+                ["Chemical System", "Elements", "All Metallic"],
+                help="How to filter materials"
+            )
+
+            if data_mode == "Chemical System":
+                chemsys = st.text_input(
+                    "Chemical system:",
+                    value="Fe-Ni",
+                    help="e.g., Fe-Ni, Fe-Ni-Cr, Ti-Al"
+                )
+                elements = None
+            elif data_mode == "Elements":
+                elements_str = st.text_input(
+                    "Elements (comma-separated):",
+                    value="Fe,Ni,Cr",
+                    help="e.g., Fe,Ni,Cr"
+                )
+                elements = [e.strip() for e in elements_str.split(",")]
+                chemsys = None
+            else:
+                elements = None
+                chemsys = None
+
+            max_materials = st.number_input(
+                "Max materials to collect:",
+                min_value=10,
+                max_value=10000,
+                value=500,
+                step=50,
+                help="More materials = better model, but longer download"
+            )
+
+        with col2:
+            st.markdown("**Filtering Options**")
+
+            metallic_only = st.checkbox("Metallic only (band gap = 0)", value=True)
+            stable_only = st.checkbox("Stable materials only", value=False)
+
+            target_property = st.selectbox(
+                "Target property to predict:",
+                ["formation_energy_per_atom", "band_gap", "energy_above_hull"],
+                help="Property the model will learn to predict"
+            )
+
+            dataset_name = st.text_input(
+                "Dataset name:",
+                value="my_dataset",
+                help="Name for saving the dataset"
+            )
+
+        st.markdown("---")
+
+        if st.button("🚀 Collect Data", type="primary", use_container_width=True):
+            try:
+                from gnn_data_collection import fetch_materials_data, convert_to_graphs, get_dataset_statistics, print_dataset_info
+
+                with st.spinner("Fetching materials from Materials Project..."):
+                    df = fetch_materials_data(
+                        api_key=api_key,
+                        elements=elements,
+                        chemsys=chemsys,
+                        max_materials=max_materials,
+                        metallic_only=metallic_only,
+                        stable_only=stable_only
+                    )
+
+                if df.empty:
+                    st.error("No materials found with these criteria!")
+                    st.stop()
+
+                st.success(f"✅ Fetched {len(df)} materials")
+
+                # Convert to graphs
+                with st.spinner("Converting structures to graphs..."):
+                    save_path = f"datasets/{dataset_name}.pkl"
+                    graphs = convert_to_graphs(
+                        df,
+                        target_property=target_property,
+                        cutoff=cutoff,
+                        max_neighbors=max_neighbors,
+                        save_path=save_path
+                    )
+
+                st.success(f"✅ Converted {len(graphs)} structures to graphs")
+                st.success(f"💾 Saved to {save_path}")
+
+                # Show statistics
+                stats = get_dataset_statistics(graphs)
+
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Graphs", stats["num_graphs"])
+                with col2:
+                    st.metric("Avg Nodes/Graph", f"{stats['avg_nodes']:.1f}")
+                with col3:
+                    st.metric("Avg Edges/Graph", f"{stats['avg_edges']:.1f}")
+                with col4:
+                    st.metric("Target Mean", f"{stats['target_mean']:.4f}")
+
+                # Show sample
+                st.markdown("**Sample Materials:**")
+                sample_df = df[["material_id", "formula", target_property]].head(10)
+                st.dataframe(sample_df, use_container_width=True)
+
+                st.info(f"💡 **Next Step:** Go to the 'Training' tab to train a model on this dataset!")
+
+            except Exception as e:
+                st.error(f"❌ Error collecting data: {e}")
+                st.exception(e)
+
+    with tab2:
+        st.subheader("🎓 Train GNN Model")
+
+        # Check for available datasets
+        datasets_dir = Path("datasets")
+        if datasets_dir.exists():
+            dataset_files = list(datasets_dir.glob("*.pkl"))
+        else:
+            dataset_files = []
+
+        if not dataset_files:
+            st.warning("⚠️ No datasets found. Please collect data first in the 'Data Collection' tab.")
+            st.stop()
+
+        # Dataset selection
+        st.markdown("**1. Select Dataset**")
+        selected_dataset = st.selectbox(
+            "Choose dataset:",
+            [f.name for f in dataset_files],
+            help="Select a previously collected dataset"
+        )
+
+        st.markdown("---")
+
+        # Training configuration
+        st.markdown("**2. Training Configuration**")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Training Parameters**")
+            epochs = st.number_input("Number of epochs:", min_value=10, max_value=500, value=100, step=10)
+            batch_size = st.number_input("Batch size:", min_value=8, max_value=128, value=32, step=8)
+            learning_rate = st.number_input("Learning rate:", min_value=0.0001, max_value=0.01, value=0.001, step=0.0001, format="%.4f")
+            patience = st.number_input("Early stopping patience:", min_value=5, max_value=50, value=20, step=5)
+
+        with col2:
+            st.markdown("**Dataset Split**")
+            train_ratio = st.slider("Train %:", 60, 90, 80, 5) / 100
+            val_ratio = st.slider("Validation %:", 5, 20, 10, 5) / 100
+            test_ratio = 1.0 - train_ratio - val_ratio
+            st.metric("Test %:", f"{test_ratio*100:.0f}%")
+
+        st.markdown("---")
+
+        # Start training button
+        if st.button("🚀 Start Training", type="primary", use_container_width=True):
+            try:
+                from gnn_data_collection import load_graph_dataset
+                from gnn_dataset import CrystalGraphDataset, split_dataset, create_data_loaders
+                from gnn_train import GNNTrainer, print_evaluation_results
+                import time
+
+                # Load dataset
+                with st.spinner("Loading dataset..."):
+                    graphs = load_graph_dataset(f"datasets/{selected_dataset}")
+                    dataset = CrystalGraphDataset(graphs)
+
+                st.success(f"✅ Loaded {len(dataset)} graphs")
+
+                # Split dataset
+                with st.spinner("Splitting dataset..."):
+                    train_dataset, val_dataset, test_dataset = split_dataset(
+                        dataset,
+                        train_ratio=train_ratio,
+                        val_ratio=val_ratio,
+                        test_ratio=test_ratio
+                    )
+
+                # Create data loaders
+                train_loader, val_loader, test_loader = create_data_loaders(
+                    train_dataset, val_dataset, test_dataset,
+                    batch_size=batch_size
+                )
+
+                # Create model
+                model = CGCNN(
+                    node_feature_dim=node_dim,
+                    edge_feature_dim=1,
+                    hidden_dim=hidden_dim,
+                    n_conv=n_conv,
+                    n_hidden=n_hidden,
+                    output_dim=1
+                )
+
+                st.info(f"🧠 Model has {count_parameters(model):,} parameters")
+
+                # Create trainer
+                device = "cpu"  # Streamlit Cloud uses CPU
+                trainer = GNNTrainer(
+                    model=model,
+                    device=device,
+                    learning_rate=learning_rate,
+                    checkpoint_dir="checkpoints"
+                )
+
+                # Training progress
+                st.markdown("---")
+                st.markdown("### 📊 Training Progress")
+
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                metrics_placeholder = st.empty()
+
+                # Placeholder for live training (simplified for Streamlit)
+                st.warning("⚠️ **Note:** Full training takes time. This will run synchronously and may timeout on Streamlit Cloud for large datasets. For long training runs, use the command-line script `gnn_train.py` locally.")
+
+                start_time = time.time()
+
+                # Train (this will block)
+                with st.spinner("Training model... This may take several minutes."):
+                    history = trainer.train(
+                        train_loader=train_loader,
+                        val_loader=val_loader,
+                        epochs=epochs,
+                        patience=patience,
+                        verbose=False  # Don't print to console
+                    )
+
+                training_time = time.time() - start_time
+
+                st.success(f"✅ Training completed in {training_time/60:.1f} minutes!")
+
+                # Show best results
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Best Epoch", trainer.best_epoch)
+                with col2:
+                    st.metric("Best Val Loss", f"{trainer.best_val_loss:.6f}")
+                with col3:
+                    st.metric("Training Time", f"{training_time/60:.1f} min")
+
+                # Plot training history
+                st.markdown("### 📈 Training History")
+                fig = trainer.plot_training_history()
+                st.pyplot(fig)
+
+                # Evaluate on test set
+                st.markdown("### 🎯 Test Set Evaluation")
+                with st.spinner("Evaluating on test set..."):
+                    metrics, predictions, targets = trainer.evaluate(test_loader)
+
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Test MAE", f"{metrics['mae']:.6f}")
+                with col2:
+                    st.metric("Test RMSE", f"{metrics['rmse']:.6f}")
+                with col3:
+                    st.metric("R² Score", f"{metrics['r2']:.4f}")
+                with col4:
+                    st.metric("Test Samples", metrics['num_samples'])
+
+                # Predictions vs Actual plot
+                fig_pred = px.scatter(
+                    x=targets,
+                    y=predictions,
+                    labels={"x": "Actual", "y": "Predicted"},
+                    title="Predictions vs Actual (Test Set)"
+                )
+                fig_pred.add_trace(
+                    go.Scatter(x=[targets.min(), targets.max()],
+                             y=[targets.min(), targets.max()],
+                             mode="lines",
+                             name="Perfect Prediction",
+                             line=dict(dash="dash", color="red"))
+                )
+                st.plotly_chart(fig_pred, use_container_width=True)
+
+                st.success("✅ Model trained and saved to `checkpoints/best_model.pt`")
+                st.info("💡 **Next Step:** Go to 'Evaluation' tab or use the trained model in 'Prediction' mode!")
+
+            except Exception as e:
+                st.error(f"❌ Error during training: {e}")
+                st.exception(e)
+
+    with tab3:
+        st.subheader("📊 Model Evaluation")
+
+        # Check for saved checkpoints
+        checkpoints_dir = Path("checkpoints")
+        if checkpoints_dir.exists():
+            checkpoint_files = list(checkpoints_dir.glob("*.pt"))
+        else:
+            checkpoint_files = []
+
+        if not checkpoint_files:
+            st.warning("⚠️ No trained models found. Please train a model first in the 'Training' tab.")
+            st.stop()
+
+        # Model selection
+        selected_checkpoint = st.selectbox(
+            "Select trained model:",
+            [f.name for f in checkpoint_files]
+        )
+
+        # Dataset selection for evaluation
+        if datasets_dir.exists():
+            dataset_files = list(datasets_dir.glob("*.pkl"))
+        else:
+            dataset_files = []
+
+        if dataset_files:
+            eval_dataset = st.selectbox(
+                "Select dataset for evaluation:",
+                [f.name for f in dataset_files]
+            )
+
+            if st.button("📊 Evaluate Model", type="primary"):
+                try:
+                    from gnn_data_collection import load_graph_dataset
+                    from gnn_dataset import CrystalGraphDataset, create_data_loaders
+                    from gnn_train import GNNTrainer
+
+                    # Load dataset
+                    graphs = load_graph_dataset(f"datasets/{eval_dataset}")
+                    dataset = CrystalGraphDataset(graphs)
+
+                    # Create data loader
+                    from torch.utils.data import DataLoader
+                    data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
+
+                    # Load model
+                    model = CGCNN(node_feature_dim=node_dim, edge_feature_dim=1,
+                                hidden_dim=hidden_dim, n_conv=n_conv, n_hidden=n_hidden, output_dim=1)
+
+                    trainer = GNNTrainer(model=model, device="cpu")
+                    trainer.load_checkpoint(f"checkpoints/{selected_checkpoint}")
+
+                    # Evaluate
+                    with st.spinner("Evaluating model..."):
+                        metrics, predictions, targets = trainer.evaluate(data_loader)
+
+                    # Show results
+                    st.success("✅ Evaluation complete!")
+
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("MAE", f"{metrics['mae']:.6f}")
+                    with col2:
+                        st.metric("RMSE", f"{metrics['rmse']:.6f}")
+                    with col3:
+                        st.metric("R²", f"{metrics['r2']:.4f}")
+                    with col4:
+                        st.metric("Samples", metrics['num_samples'])
+
+                    # Plot
+                    fig = px.scatter(x=targets, y=predictions,
+                                   labels={"x": "Actual", "y": "Predicted"},
+                                   title="Model Predictions")
+                    fig.add_trace(go.Scatter(x=[targets.min(), targets.max()],
+                                           y=[targets.min(), targets.max()],
+                                           mode="lines", name="Perfect",
+                                           line=dict(dash="dash", color="red")))
+                    st.plotly_chart(fig, use_container_width=True)
+
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    st.exception(e)
 
 elif model_mode == "🔮 Prediction (Coming Soon)":
     st.header("🔮 Property Prediction (Coming Soon)")

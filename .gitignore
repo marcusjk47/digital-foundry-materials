@@ -51,3 +51,9 @@ models/
 *.log
 logs/
 mlruns/
+datasets/
+checkpoints/
+*.pkl
+*.pt
+*.png
+*.json
