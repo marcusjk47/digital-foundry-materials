@@ -871,8 +871,8 @@ elif model_mode == "🎓 Train Model":
                     graphs = load_graph_dataset(f"datasets/{eval_dataset}")
                     dataset = CrystalGraphDataset(graphs)
 
-                    # Create data loader
-                    from torch.utils.data import DataLoader
+                    # Create data loader (must use PyTorch Geometric DataLoader for graph data)
+                    from torch_geometric.loader import DataLoader
                     data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
 
                     # Load model
