@@ -22,9 +22,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import our GNN modules
 try:
-    from crystal_graph import structure_to_graph, get_graph_stats
+    from crystal_graph import structure_to_graph, structure_to_graph_with_calphad, get_graph_stats
     from element_features import get_element_features, get_element_feature_dim
     from gnn_model import CGCNN, count_parameters
+    from gnn_model_calphad import CGCNN_CALPHAD, CGCNN_CALPHAD_Regressor
     from pymatgen.core import Structure, Lattice
     MODULES_AVAILABLE = True
 except ImportError as e:
@@ -588,6 +589,19 @@ elif model_mode == "🎓 Train Model":
                 help="Property the model will learn to predict"
             )
 
+            st.markdown("**Advanced Features**")
+
+            use_calphad = st.checkbox(
+                "Enable CALPHAD features",
+                value=False,
+                help="Enhance graphs with thermodynamic features (melting point, heat capacity, mixing energy)"
+            )
+
+            if use_calphad:
+                st.info("ℹ️ CALPHAD features add thermodynamic properties:\n"
+                       "- Node features: 13D (atomic# + 9 element + 3 CALPHAD)\n"
+                       "- Edge features: 2D (distance + mixing energy)")
+
             dataset_name = st.text_input(
                 "Dataset name:",
                 value="my_dataset",
@@ -624,11 +638,15 @@ elif model_mode == "🎓 Train Model":
                         target_property=target_property,
                         cutoff=cutoff,
                         max_neighbors=max_neighbors,
+                        use_calphad=use_calphad,
                         save_path=save_path
                     )
 
                 st.success(f"✅ Converted {len(graphs)} structures to graphs")
                 st.success(f"💾 Saved to {save_path}")
+
+                if use_calphad:
+                    st.success("🔬 CALPHAD features enabled - graphs enhanced with thermodynamic properties!")
 
                 # Show statistics
                 stats = get_dataset_statistics(graphs)
@@ -642,6 +660,16 @@ elif model_mode == "🎓 Train Model":
                     st.metric("Avg Edges/Graph", f"{stats['avg_edges']:.1f}")
                 with col4:
                     st.metric("Target Mean", f"{stats['target_mean']:.4f}")
+
+                # Show feature dimensions
+                if graphs:
+                    sample_graph = graphs[0]
+                    st.markdown("**Graph Features:**")
+                    feat_col1, feat_col2 = st.columns(2)
+                    with feat_col1:
+                        st.metric("Node Feature Dim", sample_graph.x.shape[1])
+                    with feat_col2:
+                        st.metric("Edge Feature Dim", sample_graph.edge_attr.shape[1])
 
                 # Show sample
                 st.markdown("**Sample Materials:**")

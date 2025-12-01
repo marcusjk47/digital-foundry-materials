@@ -11,6 +11,7 @@ import torch
 from torch_geometric.data import Data
 from pymatgen.core import Structure
 import numpy as np
+from typing import Optional
 
 
 def structure_to_graph(structure: Structure, cutoff=8.0, max_neighbors=12):
@@ -130,6 +131,93 @@ def structure_to_graph_with_features(structure: Structure, cutoff=8.0,
     return data
 
 
+def structure_to_graph_with_calphad(
+    structure: Structure,
+    cutoff: float = 8.0,
+    max_neighbors: int = 12,
+    tdb_path: Optional[str] = None,
+    use_element_features: bool = True
+) -> Data:
+    """
+    Convert structure to graph with CALPHAD thermodynamic features.
+
+    Combines atomic structure information with CALPHAD-derived thermodynamic
+    properties for enhanced GNN predictions.
+
+    Args:
+        structure: Pymatgen Structure object
+        cutoff: Distance cutoff for edges (Angstroms)
+        max_neighbors: Maximum neighbors per atom
+        tdb_path: Path to TDB file (optional, uses defaults if None)
+        use_element_features: If True, include element property features too
+
+    Returns:
+        torch_geometric.data.Data object with enhanced features
+    """
+    from calphad_features import CALPHADFeatureExtractor
+    from element_features import get_element_features
+
+    # Get basic graph structure
+    data = structure_to_graph(structure, cutoff, max_neighbors)
+
+    # Initialize CALPHAD extractor
+    calphad_extractor = CALPHADFeatureExtractor(tdb_path)
+
+    # Build enhanced node features
+    enhanced_node_features = []
+
+    for site in structure:
+        elem_symbol = str(site.specie.symbol)
+        atomic_number = site.specie.Z
+
+        # Start with atomic number
+        feats = [float(atomic_number)]
+
+        # Add element features if requested (9 features)
+        if use_element_features:
+            elem_feats = get_element_features(atomic_number, normalize=True)
+            feats.extend(elem_feats.numpy().tolist())
+
+        # Add CALPHAD features (3 features: melting_T, Cp, H_form)
+        calphad_feats = calphad_extractor.get_element_features(elem_symbol, normalize=True)
+        feats.extend(calphad_feats.tolist())
+
+        enhanced_node_features.append(feats)
+
+    # Replace node features with enhanced version
+    data.x = torch.tensor(enhanced_node_features, dtype=torch.float)
+    # Shape: [num_nodes, 1 + 9 + 3] = [num_nodes, 13]
+    #        atomic_number + element_features + calphad_features
+
+    # Add CALPHAD-based edge features (mixing energies)
+    if data.num_edges > 0:
+        calphad_edge_features = []
+
+        for i, j in data.edge_index.t():
+            elem_i = str(structure[i].specie.symbol)
+            elem_j = str(structure[j].specie.symbol)
+
+            # Calculate mixing energy between these elements
+            mixing_E = calphad_extractor.get_mixing_energy(elem_i, elem_j)
+
+            # Normalize mixing energy to reasonable range (-50 to +50 kJ/mol)
+            mixing_E_norm = mixing_E / 50000.0  # Convert J to kJ and normalize
+
+            calphad_edge_features.append([mixing_E_norm])
+
+        # Concatenate with existing edge features (distances)
+        calphad_edge_feats = torch.tensor(calphad_edge_features, dtype=torch.float)
+        data.edge_attr = torch.cat([data.edge_attr, calphad_edge_feats], dim=-1)
+        # Shape: [num_edges, 2] = [distance, mixing_energy]
+
+    # Store metadata about CALPHAD enhancement
+    data.has_calphad_features = True
+    data.calphad_node_dim = 13
+    data.calphad_edge_dim = 2
+
+    return data
+
+
 def batch_structures_to_graphs(structures, cutoff=8.0, max_neighbors=12):
     """
     Convert multiple structures to graphs.
@@ -171,7 +259,7 @@ def get_graph_stats(data):
 
     # Check for isolated nodes
     if data.num_edges == 0:
-        print("⚠️  Warning: Graph has no edges!")
+        print("WARNING: Graph has no edges!")
 
     return {
         'num_nodes': data.num_nodes,
@@ -215,4 +303,31 @@ if __name__ == "__main__":
     print(f"Edge attributes:\n{graph.edge_attr.squeeze()}")
     print()
 
-    print("✅ Crystal graph construction tests passed!")
+    # Test 4: CALPHAD-enhanced graph
+    print("Test 4: CALPHAD-enhanced graph construction")
+    lattice = Lattice.cubic(2.87)
+    structure = Structure(lattice, ["Fe", "Ni"], [[0, 0, 0], [0.5, 0.5, 0.5]])
+
+    graph_calphad = structure_to_graph_with_calphad(structure, cutoff=4.0)
+    print(f"Formula: {graph_calphad.formula}")
+    print(f"Node features shape: {graph_calphad.x.shape}")
+    print(f"  (Expected: [2, 13] = [num_atoms, atomic_num + 9_elem_feats + 3_calphad_feats])")
+    print(f"Edge features shape: {graph_calphad.edge_attr.shape}")
+    print(f"  (Expected: [num_edges, 2] = [distance + mixing_energy])")
+    print(f"Has CALPHAD features: {graph_calphad.has_calphad_features}")
+    print()
+
+    # Show sample features
+    print("Sample node features for Fe atom:")
+    print(f"  Atomic number: {graph_calphad.x[0, 0]:.0f}")
+    print(f"  Element features: {graph_calphad.x[0, 1:10]}")
+    print(f"  CALPHAD features: {graph_calphad.x[0, 10:13]}")
+    print()
+
+    print("Sample edge features:")
+    if graph_calphad.num_edges > 0:
+        print(f"  Distance: {graph_calphad.edge_attr[0, 0]:.3f} Å")
+        print(f"  Mixing energy (normalized): {graph_calphad.edge_attr[0, 1]:.6f}")
+    print()
+
+    print("Crystal graph construction tests passed!")

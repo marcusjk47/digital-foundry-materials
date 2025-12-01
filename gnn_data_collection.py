@@ -17,7 +17,7 @@ import torch
 from torch_geometric.data import Data
 from tqdm import tqdm
 
-from crystal_graph import structure_to_graph
+from crystal_graph import structure_to_graph, structure_to_graph_with_calphad
 from mp_api.client import MPRester
 
 
@@ -135,6 +135,8 @@ def convert_to_graphs(
     target_property: str = "formation_energy_per_atom",
     cutoff: float = 8.0,
     max_neighbors: int = 12,
+    use_calphad: bool = False,
+    tdb_path: Optional[str] = None,
     save_path: Optional[str] = None
 ) -> List[Data]:
     """
@@ -145,6 +147,9 @@ def convert_to_graphs(
         target_property: Property to use as target (y)
         cutoff: Cutoff distance for edges
         max_neighbors: Maximum neighbors per atom
+        use_calphad: If True, use CALPHAD-enhanced graph construction
+                    (13D node features, 2D edge features)
+        tdb_path: Path to TDB file for CALPHAD features (optional)
         save_path: Path to save graph dataset (optional)
 
     Returns:
@@ -154,18 +159,28 @@ def convert_to_graphs(
     print(f"  Target property: {target_property}")
     print(f"  Cutoff: {cutoff} Å")
     print(f"  Max neighbors: {max_neighbors}")
+    print(f"  CALPHAD features: {'Enabled' if use_calphad else 'Disabled'}")
 
     graphs = []
     failed_count = 0
 
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Converting to graphs"):
         try:
-            # Convert structure to graph
-            graph = structure_to_graph(
-                row["structure"],
-                cutoff=cutoff,
-                max_neighbors=max_neighbors
-            )
+            # Convert structure to graph (standard or CALPHAD-enhanced)
+            if use_calphad:
+                graph = structure_to_graph_with_calphad(
+                    row["structure"],
+                    cutoff=cutoff,
+                    max_neighbors=max_neighbors,
+                    tdb_path=tdb_path,
+                    use_element_features=True
+                )
+            else:
+                graph = structure_to_graph(
+                    row["structure"],
+                    cutoff=cutoff,
+                    max_neighbors=max_neighbors
+                )
 
             # Add target property
             if target_property in row and pd.notna(row[target_property]):
@@ -333,3 +348,37 @@ if __name__ == "__main__":
     print_dataset_info(stats)
 
     print("\nDataset ready for training!")
+
+    # Example 2: Fetch with CALPHAD features
+    print("\n\n" + "="*60)
+    print("Example 2: Fetching with CALPHAD-enhanced features")
+    print("="*60)
+    df_calphad = fetch_materials_data(
+        api_key=api_key,
+        elements=["Fe", "Ni"],
+        max_materials=20,
+        metallic_only=True
+    )
+
+    # Convert to CALPHAD-enhanced graphs
+    graphs_calphad = convert_to_graphs(
+        df_calphad,
+        target_property="formation_energy_per_atom",
+        cutoff=8.0,
+        use_calphad=True,  # Enable CALPHAD features
+        save_path="datasets/fe_ni_graphs_calphad.pkl"
+    )
+
+    # Show enhanced features
+    if graphs_calphad:
+        sample_graph = graphs_calphad[0]
+        print(f"\nSample CALPHAD-enhanced graph:")
+        print(f"  Formula: {sample_graph.formula}")
+        print(f"  Node features shape: {sample_graph.x.shape} (Expected: [num_nodes, 13])")
+        print(f"  Edge features shape: {sample_graph.edge_attr.shape} (Expected: [num_edges, 2])")
+        print(f"  Target: {sample_graph.y.item():.4f} eV/atom")
+
+    stats_calphad = get_dataset_statistics(graphs_calphad)
+    print_dataset_info(stats_calphad)
+
+    print("\nCALPHAD-enhanced dataset ready for training!")
