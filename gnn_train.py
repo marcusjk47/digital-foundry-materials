@@ -84,6 +84,10 @@ class GNNTrainer:
         total_mae = 0
         num_batches = len(train_loader)
 
+        # Handle empty training set
+        if num_batches == 0:
+            raise ValueError("Training set is empty! Cannot train model.")
+
         for batch in train_loader:
             batch = batch.to(self.device)
 
@@ -123,6 +127,11 @@ class GNNTrainer:
         total_loss = 0
         total_mae = 0
         num_batches = len(val_loader)
+
+        # Handle empty validation set
+        if num_batches == 0:
+            print("Warning: Validation set is empty!")
+            return 0.0, 0.0
 
         for batch in val_loader:
             batch = batch.to(self.device)

@@ -764,6 +764,19 @@ elif model_mode == "🎓 Train Model":
                         test_ratio=test_ratio
                     )
 
+                # Validate dataset sizes
+                if len(train_dataset) == 0:
+                    st.error("❌ **Training set is empty!** Please collect more data or adjust split ratios.")
+                    st.stop()
+
+                if len(val_dataset) == 0:
+                    st.error("❌ **Validation set is empty!** Please collect more data or adjust split ratios.")
+                    st.info("💡 **Tip:** Increase validation % or collect more materials")
+                    st.stop()
+
+                if len(dataset) < 10:
+                    st.warning(f"⚠️ **Small dataset warning:** Only {len(dataset)} samples. Recommend 100+ for reliable training.")
+
                 # Create data loaders
                 train_loader, val_loader, test_loader = create_data_loaders(
                     train_dataset, val_dataset, test_dataset,
