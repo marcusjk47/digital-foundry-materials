@@ -742,6 +742,17 @@ elif model_mode == "🎓 Train Model":
 
                 st.success(f"✅ Loaded {len(dataset)} graphs")
 
+                # Detect if dataset has CALPHAD features
+                sample_graph = graphs[0]
+                node_feature_dim = sample_graph.x.shape[1] if len(sample_graph.x.shape) > 1 else 1
+                edge_feature_dim = sample_graph.edge_attr.shape[1] if len(sample_graph.edge_attr.shape) > 1 else 1
+                has_calphad = (node_feature_dim == 13 and edge_feature_dim == 2)
+
+                if has_calphad:
+                    st.info("🔬 **CALPHAD-enhanced dataset detected!**")
+                    st.info(f"   Node features: {node_feature_dim}D (atomic# + element + CALPHAD)")
+                    st.info(f"   Edge features: {edge_feature_dim}D (distance + mixing energy)")
+
                 # Split dataset
                 with st.spinner("Splitting dataset..."):
                     train_dataset, val_dataset, test_dataset = split_dataset(
@@ -757,15 +768,28 @@ elif model_mode == "🎓 Train Model":
                     batch_size=batch_size
                 )
 
-                # Create model
-                model = CGCNN(
-                    node_feature_dim=node_dim,
-                    edge_feature_dim=1,
-                    hidden_dim=hidden_dim,
-                    n_conv=n_conv,
-                    n_hidden=n_hidden,
-                    output_dim=1
-                )
+                # Create model (use CALPHAD model if CALPHAD features detected)
+                if has_calphad:
+                    model = CGCNN_CALPHAD_Regressor(
+                        input_node_dim=13,
+                        input_edge_dim=2,
+                        node_feature_dim=node_dim,
+                        edge_feature_dim=32,
+                        hidden_dim=hidden_dim,
+                        n_conv=n_conv,
+                        n_hidden=n_hidden
+                    )
+                    st.success("✅ Using CALPHAD-enhanced CGCNN model")
+                else:
+                    model = CGCNN(
+                        node_feature_dim=node_dim,
+                        edge_feature_dim=1,
+                        hidden_dim=hidden_dim,
+                        n_conv=n_conv,
+                        n_hidden=n_hidden,
+                        output_dim=1
+                    )
+                    st.info("Using standard CGCNN model")
 
                 st.info(f"🧠 Model has {count_parameters(model):,} parameters")
 
@@ -899,13 +923,39 @@ elif model_mode == "🎓 Train Model":
                     graphs = load_graph_dataset(f"datasets/{eval_dataset}")
                     dataset = CrystalGraphDataset(graphs)
 
+                    # Detect if dataset has CALPHAD features
+                    sample_graph = graphs[0]
+                    node_feature_dim_eval = sample_graph.x.shape[1] if len(sample_graph.x.shape) > 1 else 1
+                    edge_feature_dim_eval = sample_graph.edge_attr.shape[1] if len(sample_graph.edge_attr.shape) > 1 else 1
+                    has_calphad_eval = (node_feature_dim_eval == 13 and edge_feature_dim_eval == 2)
+
+                    if has_calphad_eval:
+                        st.info("🔬 CALPHAD-enhanced dataset detected")
+
                     # Create data loader (must use PyTorch Geometric DataLoader for graph data)
                     from torch_geometric.loader import DataLoader
                     data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
 
-                    # Load model
-                    model = CGCNN(node_feature_dim=node_dim, edge_feature_dim=1,
-                                hidden_dim=hidden_dim, n_conv=n_conv, n_hidden=n_hidden, output_dim=1)
+                    # Load model (use CALPHAD model if CALPHAD features detected)
+                    if has_calphad_eval:
+                        model = CGCNN_CALPHAD_Regressor(
+                            input_node_dim=13,
+                            input_edge_dim=2,
+                            node_feature_dim=node_dim,
+                            edge_feature_dim=32,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden
+                        )
+                    else:
+                        model = CGCNN(
+                            node_feature_dim=node_dim,
+                            edge_feature_dim=1,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden,
+                            output_dim=1
+                        )
 
                     trainer = GNNTrainer(model=model, device="cpu")
                     trainer.load_checkpoint(f"checkpoints/{selected_checkpoint}")
