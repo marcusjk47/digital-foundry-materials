@@ -667,9 +667,11 @@ elif model_mode == "🎓 Train Model":
                     st.markdown("**Graph Features:**")
                     feat_col1, feat_col2 = st.columns(2)
                     with feat_col1:
-                        st.metric("Node Feature Dim", sample_graph.x.shape[1])
+                        node_dim = sample_graph.x.shape[1] if len(sample_graph.x.shape) > 1 else 1
+                        st.metric("Node Feature Dim", node_dim)
                     with feat_col2:
-                        st.metric("Edge Feature Dim", sample_graph.edge_attr.shape[1])
+                        edge_dim = sample_graph.edge_attr.shape[1] if len(sample_graph.edge_attr.shape) > 1 else 1
+                        st.metric("Edge Feature Dim", edge_dim)
 
                 # Show sample
                 st.markdown("**Sample Materials:**")
