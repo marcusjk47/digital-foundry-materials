@@ -583,11 +583,42 @@ elif model_mode == "🎓 Train Model":
             metallic_only = st.checkbox("Metallic only (band gap = 0)", value=True)
             stable_only = st.checkbox("Stable materials only", value=False)
 
-            target_property = st.selectbox(
-                "Target property to predict:",
-                ["formation_energy_per_atom", "band_gap", "energy_above_hull"],
-                help="Property the model will learn to predict"
+            st.markdown("**Target Properties**")
+            st.caption("🆕 Multi-property prediction now available!")
+
+            prediction_mode = st.radio(
+                "Prediction mode:",
+                ["Single Property", "Multi-Property (Recommended)"],
+                help="Multi-property trains one model to predict multiple properties"
             )
+
+            if prediction_mode == "Single Property":
+                target_property = st.selectbox(
+                    "Target property:",
+                    ["formation_energy_per_atom", "band_gap", "energy_above_hull", "density"],
+                    help="Property the model will learn to predict"
+                )
+                target_properties = [target_property]
+            else:
+                available_properties = {
+                    'formation_energy_per_atom': 'Formation Energy (eV/atom)',
+                    'energy_above_hull': 'Energy Above Hull (eV/atom)',
+                    'band_gap': 'Band Gap (eV)',
+                    'density': 'Density (g/cm³)',
+                }
+
+                target_properties = st.multiselect(
+                    "Select properties to predict:",
+                    list(available_properties.keys()),
+                    default=['formation_energy_per_atom', 'band_gap', 'density'],
+                    format_func=lambda x: available_properties[x],
+                    help="Model will predict all selected properties simultaneously"
+                )
+
+                if not target_properties:
+                    st.warning("⚠️ Please select at least one property")
+                else:
+                    st.info(f"✓ Training model to predict {len(target_properties)} properties")
 
             st.markdown("**Advanced Features**")
 
@@ -631,35 +662,65 @@ elif model_mode == "🎓 Train Model":
                 st.success(f"✅ Fetched {len(df)} materials")
 
                 # Convert to graphs
-                with st.spinner("Converting structures to graphs..."):
-                    save_path = f"datasets/{dataset_name}.pkl"
-                    graphs = convert_to_graphs(
-                        df,
-                        target_property=target_property,
-                        cutoff=cutoff,
-                        max_neighbors=max_neighbors,
-                        use_calphad=use_calphad,
-                        save_path=save_path
-                    )
+                if len(target_properties) > 1:
+                    # Multi-property mode
+                    from gnn_data_collection_multitask import convert_to_multitask_graphs, print_property_summary
 
-                st.success(f"✅ Converted {len(graphs)} structures to graphs")
-                st.success(f"💾 Saved to {save_path}")
+                    # Show property coverage
+                    st.markdown("**Property Coverage in Dataset:**")
+                    print_property_summary(df)
+
+                    with st.spinner("Converting structures to multi-task graphs..."):
+                        save_path = f"datasets/{dataset_name}_multitask.pkl"
+                        graphs = convert_to_multitask_graphs(
+                            df,
+                            target_properties=target_properties,
+                            cutoff=cutoff,
+                            max_neighbors=max_neighbors,
+                            use_calphad=use_calphad,
+                            save_path=save_path
+                        )
+
+                    st.success(f"✅ Converted {len(graphs)} structures to multi-task graphs")
+                    st.success(f"💾 Saved to {save_path}")
+                    st.info(f"🎯 Each graph predicts {len(target_properties)} properties: {', '.join(target_properties)}")
+
+                else:
+                    # Single-property mode
+                    with st.spinner("Converting structures to graphs..."):
+                        save_path = f"datasets/{dataset_name}.pkl"
+                        graphs = convert_to_graphs(
+                            df,
+                            target_property=target_properties[0],
+                            cutoff=cutoff,
+                            max_neighbors=max_neighbors,
+                            use_calphad=use_calphad,
+                            save_path=save_path
+                        )
+
+                    st.success(f"✅ Converted {len(graphs)} structures to graphs")
+                    st.success(f"💾 Saved to {save_path}")
 
                 if use_calphad:
                     st.success("🔬 CALPHAD features enabled - graphs enhanced with thermodynamic properties!")
 
                 # Show statistics
-                stats = get_dataset_statistics(graphs)
-
+                st.markdown("**Dataset Statistics:**")
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Total Graphs", stats["num_graphs"])
+                    st.metric("Total Graphs", len(graphs))
                 with col2:
-                    st.metric("Avg Nodes/Graph", f"{stats['avg_nodes']:.1f}")
+                    avg_nodes = sum(g.num_nodes for g in graphs) / len(graphs)
+                    st.metric("Avg Nodes/Graph", f"{avg_nodes:.1f}")
                 with col3:
-                    st.metric("Avg Edges/Graph", f"{stats['avg_edges']:.1f}")
+                    avg_edges = sum(g.num_edges for g in graphs) / len(graphs)
+                    st.metric("Avg Edges/Graph", f"{avg_edges:.1f}")
                 with col4:
-                    st.metric("Target Mean", f"{stats['target_mean']:.4f}")
+                    if len(target_properties) == 1:
+                        target_values = [g.y.item() if g.y.dim() == 1 else g.y[0].item() for g in graphs]
+                        st.metric("Target Mean", f"{sum(target_values)/len(target_values):.4f}")
+                    else:
+                        st.metric("Properties", len(target_properties))
 
                 # Show feature dimensions
                 if graphs:
@@ -675,10 +736,14 @@ elif model_mode == "🎓 Train Model":
 
                 # Show sample
                 st.markdown("**Sample Materials:**")
-                sample_df = df[["material_id", "formula", target_property]].head(10)
+                sample_cols = ["material_id", "formula"] + [p for p in target_properties if p in df.columns]
+                sample_df = df[sample_cols].head(10)
                 st.dataframe(sample_df, use_container_width=True)
 
-                st.info(f"💡 **Next Step:** Go to the 'Training' tab to train a model on this dataset!")
+                if len(target_properties) > 1:
+                    st.info(f"💡 **Next Step:** Train a multi-task model to predict all {len(target_properties)} properties!")
+                else:
+                    st.info(f"💡 **Next Step:** Go to the 'Training' tab to train a model on this dataset!")
 
             except Exception as e:
                 st.error(f"❌ Error collecting data: {e}")
@@ -926,39 +991,103 @@ elif model_mode == "🎓 Train Model":
                 if dataset_size < 10:
                     st.warning(f"⚠️ **Small dataset warning:** Only {dataset_size} samples. Recommend 100+ for reliable training.")
 
-                # Create model (use CALPHAD model if CALPHAD features detected)
-                if has_calphad:
-                    model = CGCNN_CALPHAD_Regressor(
-                        input_node_dim=13,
-                        input_edge_dim=2,
-                        node_feature_dim=node_dim,
-                        edge_feature_dim=32,
-                        hidden_dim=hidden_dim,
-                        n_conv=n_conv,
-                        n_hidden=n_hidden
-                    )
-                    st.success("✅ Using CALPHAD-enhanced CGCNN model")
+                # Detect if dataset is multi-task
+                sample_batch = next(iter(train_loader))
+                is_multitask = False
+                target_properties = None
+
+                if hasattr(sample_batch, 'y') and len(sample_batch.y.shape) > 0:
+                    # Check if y has multiple dimensions (multi-task)
+                    if len(sample_batch.y.shape) == 2 and sample_batch.y.shape[1] > 1:
+                        is_multitask = True
+                        # Try to get property names from batch
+                        if hasattr(sample_batch, 'target_properties'):
+                            target_properties = sample_batch.target_properties
+                        else:
+                            # Extract from first graph if available
+                            if using_sharded or len(selected_datasets) > 1:
+                                # For sharded datasets, need to peek at manifest or actual data
+                                pass
+                            else:
+                                if hasattr(graphs[0], 'target_properties'):
+                                    target_properties = graphs[0].target_properties
+
+                if is_multitask and target_properties:
+                    st.success(f"🎯 **Multi-task dataset detected!**")
+                    st.info(f"   Predicting {len(target_properties)} properties: {', '.join(target_properties)}")
+
+                # Create model (multi-task or single-task)
+                if is_multitask and target_properties:
+                    # Multi-task model
+                    from gnn_model_multitask import CGCNN_MultiTask, CGCNN_MultiTask_CALPHAD
+
+                    if has_calphad:
+                        model = CGCNN_MultiTask_CALPHAD(
+                            input_node_dim=13,
+                            input_edge_dim=2,
+                            node_feature_dim=node_dim,
+                            edge_feature_dim=32,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden,
+                            properties=target_properties
+                        )
+                        st.success("✅ Using CALPHAD-enhanced Multi-Task CGCNN model")
+                    else:
+                        model = CGCNN_MultiTask(
+                            node_feature_dim=node_dim,
+                            edge_feature_dim=1,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden,
+                            properties=target_properties
+                        )
+                        st.success("✅ Using Multi-Task CGCNN model")
                 else:
-                    model = CGCNN(
-                        node_feature_dim=node_dim,
-                        edge_feature_dim=1,
-                        hidden_dim=hidden_dim,
-                        n_conv=n_conv,
-                        n_hidden=n_hidden,
-                        output_dim=1
-                    )
-                    st.info("Using standard CGCNN model")
+                    # Single-task model
+                    if has_calphad:
+                        model = CGCNN_CALPHAD_Regressor(
+                            input_node_dim=13,
+                            input_edge_dim=2,
+                            node_feature_dim=node_dim,
+                            edge_feature_dim=32,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden
+                        )
+                        st.success("✅ Using CALPHAD-enhanced CGCNN model")
+                    else:
+                        model = CGCNN(
+                            node_feature_dim=node_dim,
+                            edge_feature_dim=1,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden,
+                            output_dim=1
+                        )
+                        st.info("Using standard CGCNN model")
 
                 st.info(f"🧠 Model has {count_parameters(model):,} parameters")
 
-                # Create trainer
+                # Create trainer (multi-task or single-task)
                 device = "cpu"  # Streamlit Cloud uses CPU
-                trainer = GNNTrainer(
-                    model=model,
-                    device=device,
-                    learning_rate=learning_rate,
-                    checkpoint_dir="checkpoints"
-                )
+
+                if is_multitask and target_properties:
+                    from gnn_train_multitask import MultiTaskGNNTrainer
+                    trainer = MultiTaskGNNTrainer(
+                        model=model,
+                        properties=target_properties,
+                        device=device,
+                        learning_rate=learning_rate,
+                        checkpoint_dir="checkpoints"
+                    )
+                else:
+                    trainer = GNNTrainer(
+                        model=model,
+                        device=device,
+                        learning_rate=learning_rate,
+                        checkpoint_dir="checkpoints"
+                    )
 
                 # Training progress
                 st.markdown("---")
@@ -1001,39 +1130,49 @@ elif model_mode == "🎓 Train Model":
                 fig = trainer.plot_training_history()
                 st.pyplot(fig)
 
-                # Evaluate on test set
-                st.markdown("### 🎯 Test Set Evaluation")
-                with st.spinner("Evaluating on test set..."):
-                    metrics, predictions, targets = trainer.evaluate(test_loader)
+                # Evaluate on test set (single-task only for now)
+                if not is_multitask:
+                    st.markdown("### 🎯 Test Set Evaluation")
+                    with st.spinner("Evaluating on test set..."):
+                        metrics, predictions, targets = trainer.evaluate(test_loader)
 
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Test MAE", f"{metrics['mae']:.6f}")
-                with col2:
-                    st.metric("Test RMSE", f"{metrics['rmse']:.6f}")
-                with col3:
-                    st.metric("R² Score", f"{metrics['r2']:.4f}")
-                with col4:
-                    st.metric("Test Samples", metrics['num_samples'])
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Test MAE", f"{metrics['mae']:.6f}")
+                    with col2:
+                        st.metric("Test RMSE", f"{metrics['rmse']:.6f}")
+                    with col3:
+                        st.metric("R² Score", f"{metrics['r2']:.4f}")
+                    with col4:
+                        st.metric("Test Samples", metrics['num_samples'])
 
-                # Predictions vs Actual plot
-                fig_pred = px.scatter(
-                    x=targets,
-                    y=predictions,
-                    labels={"x": "Actual", "y": "Predicted"},
-                    title="Predictions vs Actual (Test Set)"
-                )
-                fig_pred.add_trace(
-                    go.Scatter(x=[targets.min(), targets.max()],
-                             y=[targets.min(), targets.max()],
-                             mode="lines",
-                             name="Perfect Prediction",
-                             line=dict(dash="dash", color="red"))
-                )
-                st.plotly_chart(fig_pred, use_container_width=True)
+                    # Predictions vs Actual plot
+                    fig_pred = px.scatter(
+                        x=targets,
+                        y=predictions,
+                        labels={"x": "Actual", "y": "Predicted"},
+                        title="Predictions vs Actual (Test Set)"
+                    )
+                    fig_pred.add_trace(
+                        go.Scatter(x=[targets.min(), targets.max()],
+                                 y=[targets.min(), targets.max()],
+                                 mode="lines",
+                                 name="Perfect Prediction",
+                                 line=dict(dash="dash", color="red"))
+                    )
+                    st.plotly_chart(fig_pred, use_container_width=True)
+                else:
+                    st.markdown("### 🎯 Multi-Property Training Complete")
+                    st.info(f"✅ Trained model to predict {len(target_properties)} properties simultaneously")
+                    st.info("📊 Training curves above show individual property losses over epochs")
 
-                st.success("✅ Model trained and saved to `checkpoints/best_model.pt`")
-                st.info("💡 **Next Step:** Go to 'Evaluation' tab or use the trained model in 'Prediction' mode!")
+                # Success message with correct filename
+                if is_multitask:
+                    st.success("✅ Model trained and saved to `checkpoints/best_model_multitask.pt`")
+                else:
+                    st.success("✅ Model trained and saved to `checkpoints/best_model.pt`")
+
+                st.info("💡 **Next Step:** Use the trained model in 'Prediction' mode!")
 
             except Exception as e:
                 st.error(f"❌ Error during training: {e}")
@@ -1542,20 +1681,44 @@ elif model_mode == "🎓 Train Model":
                 st.error("❌ The key advantage is about what information GNNs can use.")
 
 elif model_mode == "🔮 Prediction":
-    st.header("🔮 Formation Energy Prediction")
+    st.header("🔮 Material Property Prediction")
 
     st.markdown("""
-    Predict formation energies for new materials using your trained GNN model.
+    Predict material properties using your trained GNN model.
+    Supports both single-property and multi-property models.
     """)
 
-    # Check for trained model
-    checkpoint_path = Path("checkpoints/best_model.pt")
-    if not checkpoint_path.exists():
-        st.error("⚠️ **No trained model found!**")
+    # Check for trained models
+    checkpoints_dir = Path("checkpoints")
+    available_checkpoints = []
+
+    if checkpoints_dir.exists():
+        available_checkpoints = list(checkpoints_dir.glob("*.pt"))
+
+    if not available_checkpoints:
+        st.error("⚠️ **No trained models found!**")
         st.info("Please train a model first in the '📊 Model Training' mode.")
         st.stop()
 
-    st.success(f"✅ Model loaded: {checkpoint_path}")
+    # Model selection
+    selected_checkpoint_name = st.selectbox(
+        "Select trained model:",
+        [f.name for f in available_checkpoints],
+        help="Choose a trained model for predictions"
+    )
+    checkpoint_path = checkpoints_dir / selected_checkpoint_name
+
+    # Detect model type
+    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    properties = checkpoint.get('properties', None)
+    is_multitask_model = properties is not None and len(properties) > 1
+
+    if is_multitask_model:
+        st.success(f"✅ Multi-task model loaded: {selected_checkpoint_name}")
+        st.info(f"🎯 Predicts {len(properties)} properties: {', '.join(properties)}")
+    else:
+        st.success(f"✅ Single-task model loaded: {selected_checkpoint_name}")
+        st.info("🎯 Predicts: Formation Energy")
 
     # Tabs for different input methods
     tab1, tab2, tab3 = st.tabs(["🧪 Create from Composition", "🔍 Materials Project", "📤 Upload File"])
@@ -1581,10 +1744,10 @@ elif model_mode == "🔮 Prediction":
 
         st.markdown(f"**Composition:** Fe{fe_percent}Ni{ni_percent}")
 
-        if st.button("🚀 Predict Formation Energy", type="primary", use_container_width=True):
+        if st.button("🚀 Predict Properties", type="primary", use_container_width=True):
             try:
                 import numpy as np
-                from crystal_graph import structure_to_graph, structure_to_graph_with_calphad
+                from streamlit_prediction_utils import load_model_and_predict, display_predictions
 
                 with st.spinner("Creating structure..."):
                     # Create structure
@@ -1629,83 +1792,24 @@ elif model_mode == "🔮 Prediction":
 
                 st.success(f"✅ Created {lattice_type} structure with {len(structure)} atoms")
 
-                # Convert to graph
-                with st.spinner("Converting to graph..."):
-                    # Try CALPHAD first, fall back to standard
-                    try:
-                        graph = structure_to_graph_with_calphad(structure, cutoff=8.0, max_neighbors=12)
-                        use_calphad = True
-                    except:
-                        graph = structure_to_graph(structure, cutoff=8.0, max_neighbors=12)
-                        use_calphad = False
-
-                # Load model
-                with st.spinner("Loading model..."):
-                    checkpoint = torch.load(checkpoint_path, map_location='cpu')
-
-                    if use_calphad:
-                        model = CGCNN_CALPHAD_Regressor(
-                            input_node_dim=13,
-                            input_edge_dim=2,
-                            node_feature_dim=node_dim,
-                            edge_feature_dim=32,
-                            hidden_dim=hidden_dim,
-                            n_conv=n_conv,
-                            n_hidden=n_hidden
-                        )
-                    else:
-                        model = CGCNN(
-                            node_feature_dim=node_dim,
-                            edge_feature_dim=1,
-                            hidden_dim=hidden_dim,
-                            n_conv=n_conv,
-                            n_hidden=n_hidden,
-                            output_dim=1
-                        )
-
-                    model.load_state_dict(checkpoint['model_state_dict'])
-                    model.eval()
-
-                # Predict
+                # Make prediction using utility function
                 with st.spinner("Making prediction..."):
-                    with torch.no_grad():
-                        prediction = model(graph)
-                        if isinstance(prediction, dict):
-                            formation_energy = prediction['formation_energy'].item()
-                        else:
-                            formation_energy = prediction.item()
-
-                # Display results
-                st.markdown("---")
-                st.markdown("### 🎯 Prediction Results")
-
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    st.metric(
-                        "Formation Energy",
-                        f"{formation_energy:.4f} eV/atom",
-                        delta="Stable" if formation_energy < 0 else "Unstable",
-                        delta_color="normal" if formation_energy < 0 else "inverse"
+                    predictions, is_multi, uses_calphad = load_model_and_predict(
+                        structure,
+                        checkpoint_path,
+                        node_dim=node_dim,
+                        hidden_dim=hidden_dim,
+                        n_conv=n_conv,
+                        n_hidden=n_hidden
                     )
 
-                with col2:
-                    st.metric("Composition", f"Fe{fe_percent}Ni{ni_percent}")
-
-                with col3:
-                    st.metric("Structure", lattice_type)
-
-                # Interpretation
-                st.markdown("### 💡 Interpretation")
-
-                if formation_energy < -0.3:
-                    st.success("✅ **Highly Stable** - This composition should form readily and be stable.")
-                elif formation_energy < 0:
-                    st.info("✓ **Stable** - This composition is stable but less favorable.")
-                elif formation_energy < 0.2:
-                    st.warning("⚠️ **Marginally Unstable** - May form under special conditions.")
-                else:
-                    st.error("❌ **Unstable** - Likely to decompose into separate phases.")
+                # Display predictions using utility function
+                composition_info = f"Fe{fe_percent}Ni{ni_percent} ({lattice_type})"
+                display_predictions(
+                    predictions,
+                    formula=structure.composition.reduced_formula,
+                    composition_info=composition_info
+                )
 
                 # Structure info
                 with st.expander("📊 Structure Details"):
@@ -1716,6 +1820,7 @@ elif model_mode == "🔮 Prediction":
                     st.write(f"**Lattice Parameter:** {a * supercell_size:.3f} Å")
                     st.write(f"**Volume:** {structure.volume:.2f} ų")
                     st.write(f"**Density:** {structure.density:.2f} g/cm³")
+                    st.write(f"**CALPHAD Features:** {'Yes' if uses_calphad else 'No'}")
 
             except Exception as e:
                 st.error(f"❌ Prediction failed: {e}")
@@ -1725,7 +1830,7 @@ elif model_mode == "🔮 Prediction":
         st.subheader("Fetch from Materials Project")
 
         st.markdown("""
-        Query Materials Project database by material ID and predict formation energy.
+        Query Materials Project database by material ID and predict properties.
         """)
 
         # Check API key
@@ -1754,7 +1859,7 @@ elif model_mode == "🔮 Prediction":
             if material_id and st.button("🔍 Fetch and Predict", type="primary", use_container_width=True):
                 try:
                     from mp_api.client import MPRester
-                    from crystal_graph import structure_to_graph, structure_to_graph_with_calphad
+                    from streamlit_prediction_utils import load_model_and_predict, display_predictions
 
                     with st.spinner(f"Fetching {material_id} from Materials Project..."):
                         with MPRester(api_key) as mpr:
@@ -1762,76 +1867,33 @@ elif model_mode == "🔮 Prediction":
 
                     st.success(f"✅ Fetched structure: {structure.composition.reduced_formula}")
 
-                    # Convert to graph
-                    with st.spinner("Converting to graph..."):
-                        try:
-                            graph = structure_to_graph_with_calphad(structure, cutoff=8.0, max_neighbors=12)
-                            use_calphad = True
-                        except:
-                            graph = structure_to_graph(structure, cutoff=8.0, max_neighbors=12)
-                            use_calphad = False
-
-                    # Load and predict
-                    with st.spinner("Predicting..."):
-                        checkpoint = torch.load(checkpoint_path, map_location='cpu')
-
-                        if use_calphad:
-                            model = CGCNN_CALPHAD_Regressor(
-                                input_node_dim=13,
-                                input_edge_dim=2,
-                                node_feature_dim=node_dim,
-                                edge_feature_dim=32,
-                                hidden_dim=hidden_dim,
-                                n_conv=n_conv,
-                                n_hidden=n_hidden
-                            )
-                        else:
-                            model = CGCNN(
-                                node_feature_dim=node_dim,
-                                edge_feature_dim=1,
-                                hidden_dim=hidden_dim,
-                                n_conv=n_conv,
-                                n_hidden=n_hidden,
-                                output_dim=1
-                            )
-
-                        model.load_state_dict(checkpoint['model_state_dict'])
-                        model.eval()
-
-                        with torch.no_grad():
-                            prediction = model(graph)
-                            if isinstance(prediction, dict):
-                                formation_energy = prediction['formation_energy'].item()
-                            else:
-                                formation_energy = prediction.item()
-
-                    # Results
-                    st.markdown("---")
-                    st.markdown("### 🎯 Prediction Results")
-
-                    col1, col2, col3 = st.columns(3)
-
-                    with col1:
-                        st.metric(
-                            "Predicted Formation Energy",
-                            f"{formation_energy:.4f} eV/atom",
-                            delta="Stable" if formation_energy < 0 else "Unstable",
-                            delta_color="normal" if formation_energy < 0 else "inverse"
+                    # Make prediction
+                    with st.spinner("Making prediction..."):
+                        predictions, is_multi, uses_calphad = load_model_and_predict(
+                            structure,
+                            checkpoint_path,
+                            node_dim=node_dim,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden
                         )
 
-                    with col2:
-                        st.metric("Material ID", material_id)
-
-                    with col3:
-                        st.metric("Formula", structure.composition.reduced_formula)
+                    # Display predictions
+                    display_predictions(
+                        predictions,
+                        formula=structure.composition.reduced_formula,
+                        composition_info=f"Material ID: {material_id}"
+                    )
 
                     # Structure details
                     with st.expander("📊 Structure Details"):
+                        st.write(f"**Material ID:** {material_id}")
                         st.write(f"**Full Formula:** {structure.composition.formula}")
                         st.write(f"**Number of Sites:** {len(structure)}")
                         st.write(f"**Space Group:** {structure.get_space_group_info()[0]} (#{structure.get_space_group_info()[1]})")
                         st.write(f"**Volume:** {structure.volume:.2f} ų")
                         st.write(f"**Density:** {structure.density:.2f} g/cm³")
+                        st.write(f"**CALPHAD Features:** {'Yes' if uses_calphad else 'No'}")
 
                 except Exception as e:
                     st.error(f"❌ Error: {e}")
@@ -1841,7 +1903,7 @@ elif model_mode == "🔮 Prediction":
         st.subheader("Upload Structure File")
 
         st.markdown("""
-        Upload a crystal structure file (CIF or POSCAR format) and predict formation energy.
+        Upload a crystal structure file (CIF or POSCAR format) and predict properties.
         """)
 
         uploaded_file = st.file_uploader(
@@ -1853,7 +1915,7 @@ elif model_mode == "🔮 Prediction":
         if uploaded_file is not None:
             try:
                 import tempfile
-                from crystal_graph import structure_to_graph, structure_to_graph_with_calphad
+                from streamlit_prediction_utils import load_model_and_predict, display_predictions
 
                 # Save to temp file
                 with tempfile.NamedTemporaryFile(delete=False, suffix=uploaded_file.name) as tmp_file:
@@ -1866,79 +1928,33 @@ elif model_mode == "🔮 Prediction":
 
                 st.success(f"✅ Loaded structure: {structure.composition.reduced_formula}")
 
-                if st.button("🚀 Predict Formation Energy", type="primary", use_container_width=True):
-                    # Convert to graph
-                    with st.spinner("Converting to graph..."):
-                        try:
-                            graph = structure_to_graph_with_calphad(structure, cutoff=8.0, max_neighbors=12)
-                            use_calphad = True
-                        except:
-                            graph = structure_to_graph(structure, cutoff=8.0, max_neighbors=12)
-                            use_calphad = False
-
-                    # Load and predict
-                    with st.spinner("Predicting..."):
-                        checkpoint = torch.load(checkpoint_path, map_location='cpu')
-
-                        if use_calphad:
-                            model = CGCNN_CALPHAD_Regressor(
-                                input_node_dim=13,
-                                input_edge_dim=2,
-                                node_feature_dim=node_dim,
-                                edge_feature_dim=32,
-                                hidden_dim=hidden_dim,
-                                n_conv=n_conv,
-                                n_hidden=n_hidden
-                            )
-                        else:
-                            model = CGCNN(
-                                node_feature_dim=node_dim,
-                                edge_feature_dim=1,
-                                hidden_dim=hidden_dim,
-                                n_conv=n_conv,
-                                n_hidden=n_hidden,
-                                output_dim=1
-                            )
-
-                        model.load_state_dict(checkpoint['model_state_dict'])
-                        model.eval()
-
-                        with torch.no_grad():
-                            prediction = model(graph)
-                            if isinstance(prediction, dict):
-                                formation_energy = prediction['formation_energy'].item()
-                            else:
-                                formation_energy = prediction.item()
-
-                    # Results
-                    st.markdown("---")
-                    st.markdown("### 🎯 Prediction Results")
-
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        st.metric(
-                            "Formation Energy",
-                            f"{formation_energy:.4f} eV/atom",
-                            delta="Stable" if formation_energy < 0 else "Unstable",
-                            delta_color="normal" if formation_energy < 0 else "inverse"
+                if st.button("🚀 Predict Properties", type="primary", use_container_width=True):
+                    # Make prediction
+                    with st.spinner("Making prediction..."):
+                        predictions, is_multi, uses_calphad = load_model_and_predict(
+                            structure,
+                            checkpoint_path,
+                            node_dim=node_dim,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden
                         )
 
-                    with col2:
-                        st.metric("Formula", structure.composition.reduced_formula)
-
-                    # Interpretation
-                    if formation_energy < 0:
-                        st.success("✅ **Stable** - Negative formation energy indicates stability.")
-                    else:
-                        st.error("❌ **Unstable** - Positive formation energy suggests decomposition.")
+                    # Display predictions
+                    display_predictions(
+                        predictions,
+                        formula=structure.composition.reduced_formula,
+                        composition_info=f"Uploaded: {uploaded_file.name}"
+                    )
 
                     # Structure details
                     with st.expander("📊 Structure Details"):
+                        st.write(f"**Source:** {uploaded_file.name}")
                         st.write(f"**Full Formula:** {structure.composition.formula}")
                         st.write(f"**Number of Sites:** {len(structure)}")
                         st.write(f"**Volume:** {structure.volume:.2f} ų")
                         st.write(f"**Density:** {structure.density:.2f} g/cm³")
+                        st.write(f"**CALPHAD Features:** {'Yes' if uses_calphad else 'No'}")
 
                 # Cleanup
                 os.unlink(tmp_path)
