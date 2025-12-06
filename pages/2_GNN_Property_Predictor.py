@@ -87,7 +87,7 @@ st.sidebar.title("⚙️ Model Configuration")
 
 model_mode = st.sidebar.radio(
     "Operation Mode:",
-    ["🎯 Demo Mode", "📚 Architecture Info", "🎓 Train Model", "🔮 Prediction (Coming Soon)"],
+    ["🎯 Demo Mode", "📚 Architecture Info", "🎓 Train Model", "🔮 Prediction"],
     help="Demo mode shows GNN capabilities with example structures"
 )
 
@@ -1541,75 +1541,411 @@ elif model_mode == "🎓 Train Model":
             elif q4:
                 st.error("❌ The key advantage is about what information GNNs can use.")
 
-elif model_mode == "🔮 Prediction (Coming Soon)":
-    st.header("🔮 Property Prediction (Coming Soon)")
+elif model_mode == "🔮 Prediction":
+    st.header("🔮 Formation Energy Prediction")
 
     st.markdown("""
-    <div class="info-box">
-    <h3>🚧 Under Development</h3>
+    Predict formation energies for new materials using your trained GNN model.
+    """)
 
-    This mode will allow you to:
+    # Check for trained model
+    checkpoint_path = Path("checkpoints/best_model.pt")
+    if not checkpoint_path.exists():
+        st.error("⚠️ **No trained model found!**")
+        st.info("Please train a model first in the '📊 Model Training' mode.")
+        st.stop()
 
-    1. **Upload crystal structures** (CIF, POSCAR files)
-    2. **Query Materials Project** by material ID
-    3. **Select pre-trained models** for different properties
-    4. **Get predictions** with uncertainty estimates
-    5. **Download results** as CSV
+    st.success(f"✅ Model loaded: {checkpoint_path}")
 
-    <strong>Available Properties (Planned):</strong>
-    - Formation Energy (eV/atom)
-    - Band Gap (eV)
-    - Bulk Modulus (GPa)
-    - Shear Modulus (GPa)
-    - Magnetic Moment (μB)
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # Preview interface
-    st.subheader("🎨 Interface Preview")
-
-    tab1, tab2, tab3 = st.tabs(["📤 Upload", "🔍 Materials Project", "📊 Results"])
+    # Tabs for different input methods
+    tab1, tab2, tab3 = st.tabs(["🧪 Create from Composition", "🔍 Materials Project", "📤 Upload File"])
 
     with tab1:
-        st.markdown("**Upload Structure File**")
-        st.file_uploader("Choose CIF or POSCAR file", type=['cif', 'poscar', 'vasp'], disabled=True)
-        st.button("🚀 Predict Properties", disabled=True, type="primary")
+        st.subheader("Create Structure from Composition")
+
+        st.markdown("""
+        Create a simple crystal structure from Fe-Ni composition and predict its formation energy.
+        """)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            fe_percent = st.slider("Fe Content (%)", 0, 100, 50, 5)
+            ni_percent = 100 - fe_percent
+            st.metric("Ni Content (%)", ni_percent)
+
+        with col2:
+            lattice_type = st.selectbox("Crystal Structure", ["FCC", "BCC"])
+            supercell_size = st.selectbox("Supercell Size", [1, 2, 3], index=1,
+                                         help="Larger = more realistic but slower")
+
+        st.markdown(f"**Composition:** Fe{fe_percent}Ni{ni_percent}")
+
+        if st.button("🚀 Predict Formation Energy", type="primary", use_container_width=True):
+            try:
+                import numpy as np
+                from crystal_graph import structure_to_graph, structure_to_graph_with_calphad
+
+                with st.spinner("Creating structure..."):
+                    # Create structure
+                    a = 3.6
+                    if lattice_type == "FCC":
+                        lattice = Lattice.cubic(a)
+                        base_positions = [
+                            [0.0, 0.0, 0.0],
+                            [0.5, 0.5, 0.0],
+                            [0.5, 0.0, 0.5],
+                            [0.0, 0.5, 0.5]
+                        ]
+                    else:  # BCC
+                        lattice = Lattice.cubic(a)
+                        base_positions = [
+                            [0.0, 0.0, 0.0],
+                            [0.5, 0.5, 0.5]
+                        ]
+
+                    # Create supercell
+                    positions = []
+                    for i in range(supercell_size):
+                        for j in range(supercell_size):
+                            for k in range(supercell_size):
+                                for pos in base_positions:
+                                    new_pos = [
+                                        (pos[0] + i) / supercell_size,
+                                        (pos[1] + j) / supercell_size,
+                                        (pos[2] + k) / supercell_size
+                                    ]
+                                    positions.append(new_pos)
+
+                    # Assign elements
+                    num_atoms = len(positions)
+                    num_fe = int(num_atoms * fe_percent / 100)
+                    elements = ['Fe'] * num_fe + ['Ni'] * (num_atoms - num_fe)
+                    np.random.shuffle(elements)
+
+                    # Create structure
+                    supercell_lattice = Lattice(lattice.matrix * supercell_size)
+                    structure = Structure(supercell_lattice, elements, positions)
+
+                st.success(f"✅ Created {lattice_type} structure with {len(structure)} atoms")
+
+                # Convert to graph
+                with st.spinner("Converting to graph..."):
+                    # Try CALPHAD first, fall back to standard
+                    try:
+                        graph = structure_to_graph_with_calphad(structure, cutoff=8.0, max_neighbors=12)
+                        use_calphad = True
+                    except:
+                        graph = structure_to_graph(structure, cutoff=8.0, max_neighbors=12)
+                        use_calphad = False
+
+                # Load model
+                with st.spinner("Loading model..."):
+                    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+
+                    if use_calphad:
+                        model = CGCNN_CALPHAD_Regressor(
+                            input_node_dim=13,
+                            input_edge_dim=2,
+                            node_feature_dim=node_dim,
+                            edge_feature_dim=32,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden
+                        )
+                    else:
+                        model = CGCNN(
+                            node_feature_dim=node_dim,
+                            edge_feature_dim=1,
+                            hidden_dim=hidden_dim,
+                            n_conv=n_conv,
+                            n_hidden=n_hidden,
+                            output_dim=1
+                        )
+
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    model.eval()
+
+                # Predict
+                with st.spinner("Making prediction..."):
+                    with torch.no_grad():
+                        prediction = model(graph)
+                        if isinstance(prediction, dict):
+                            formation_energy = prediction['formation_energy'].item()
+                        else:
+                            formation_energy = prediction.item()
+
+                # Display results
+                st.markdown("---")
+                st.markdown("### 🎯 Prediction Results")
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.metric(
+                        "Formation Energy",
+                        f"{formation_energy:.4f} eV/atom",
+                        delta="Stable" if formation_energy < 0 else "Unstable",
+                        delta_color="normal" if formation_energy < 0 else "inverse"
+                    )
+
+                with col2:
+                    st.metric("Composition", f"Fe{fe_percent}Ni{ni_percent}")
+
+                with col3:
+                    st.metric("Structure", lattice_type)
+
+                # Interpretation
+                st.markdown("### 💡 Interpretation")
+
+                if formation_energy < -0.3:
+                    st.success("✅ **Highly Stable** - This composition should form readily and be stable.")
+                elif formation_energy < 0:
+                    st.info("✓ **Stable** - This composition is stable but less favorable.")
+                elif formation_energy < 0.2:
+                    st.warning("⚠️ **Marginally Unstable** - May form under special conditions.")
+                else:
+                    st.error("❌ **Unstable** - Likely to decompose into separate phases.")
+
+                # Structure info
+                with st.expander("📊 Structure Details"):
+                    st.write(f"**Formula:** {structure.composition.formula}")
+                    st.write(f"**Reduced Formula:** {structure.composition.reduced_formula}")
+                    st.write(f"**Number of Atoms:** {len(structure)}")
+                    st.write(f"**Lattice Type:** {lattice_type}")
+                    st.write(f"**Lattice Parameter:** {a * supercell_size:.3f} Å")
+                    st.write(f"**Volume:** {structure.volume:.2f} ų")
+                    st.write(f"**Density:** {structure.density:.2f} g/cm³")
+
+            except Exception as e:
+                st.error(f"❌ Prediction failed: {e}")
+                st.exception(e)
 
     with tab2:
-        st.markdown("**Query Materials Project**")
-        st.text_input("Material ID (e.g., mp-149):", disabled=True)
-        st.selectbox("Property to predict:",
-                    ["Formation Energy", "Band Gap", "Bulk Modulus"],
-                    disabled=True)
-        st.button("🔍 Fetch and Predict", disabled=True, type="primary")
+        st.subheader("Fetch from Materials Project")
+
+        st.markdown("""
+        Query Materials Project database by material ID and predict formation energy.
+        """)
+
+        # Check API key
+        api_key = os.environ.get("MP_API_KEY")
+        if not api_key:
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+                api_key = os.environ.get("MP_API_KEY")
+            except:
+                pass
+
+        if not api_key:
+            st.error("⚠️ **Materials Project API Key Required**")
+            st.markdown("""
+            Add `MP_API_KEY` to your environment or `.env` file.
+            Get your key at: https://next-gen.materialsproject.org/api
+            """)
+        else:
+            material_id = st.text_input(
+                "Material ID",
+                placeholder="e.g., mp-149, mp-8636",
+                help="Enter a Materials Project ID"
+            )
+
+            if material_id and st.button("🔍 Fetch and Predict", type="primary", use_container_width=True):
+                try:
+                    from mp_api.client import MPRester
+                    from crystal_graph import structure_to_graph, structure_to_graph_with_calphad
+
+                    with st.spinner(f"Fetching {material_id} from Materials Project..."):
+                        with MPRester(api_key) as mpr:
+                            structure = mpr.get_structure_by_material_id(material_id)
+
+                    st.success(f"✅ Fetched structure: {structure.composition.reduced_formula}")
+
+                    # Convert to graph
+                    with st.spinner("Converting to graph..."):
+                        try:
+                            graph = structure_to_graph_with_calphad(structure, cutoff=8.0, max_neighbors=12)
+                            use_calphad = True
+                        except:
+                            graph = structure_to_graph(structure, cutoff=8.0, max_neighbors=12)
+                            use_calphad = False
+
+                    # Load and predict
+                    with st.spinner("Predicting..."):
+                        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+
+                        if use_calphad:
+                            model = CGCNN_CALPHAD_Regressor(
+                                input_node_dim=13,
+                                input_edge_dim=2,
+                                node_feature_dim=node_dim,
+                                edge_feature_dim=32,
+                                hidden_dim=hidden_dim,
+                                n_conv=n_conv,
+                                n_hidden=n_hidden
+                            )
+                        else:
+                            model = CGCNN(
+                                node_feature_dim=node_dim,
+                                edge_feature_dim=1,
+                                hidden_dim=hidden_dim,
+                                n_conv=n_conv,
+                                n_hidden=n_hidden,
+                                output_dim=1
+                            )
+
+                        model.load_state_dict(checkpoint['model_state_dict'])
+                        model.eval()
+
+                        with torch.no_grad():
+                            prediction = model(graph)
+                            if isinstance(prediction, dict):
+                                formation_energy = prediction['formation_energy'].item()
+                            else:
+                                formation_energy = prediction.item()
+
+                    # Results
+                    st.markdown("---")
+                    st.markdown("### 🎯 Prediction Results")
+
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        st.metric(
+                            "Predicted Formation Energy",
+                            f"{formation_energy:.4f} eV/atom",
+                            delta="Stable" if formation_energy < 0 else "Unstable",
+                            delta_color="normal" if formation_energy < 0 else "inverse"
+                        )
+
+                    with col2:
+                        st.metric("Material ID", material_id)
+
+                    with col3:
+                        st.metric("Formula", structure.composition.reduced_formula)
+
+                    # Structure details
+                    with st.expander("📊 Structure Details"):
+                        st.write(f"**Full Formula:** {structure.composition.formula}")
+                        st.write(f"**Number of Sites:** {len(structure)}")
+                        st.write(f"**Space Group:** {structure.get_space_group_info()[0]} (#{structure.get_space_group_info()[1]})")
+                        st.write(f"**Volume:** {structure.volume:.2f} ų")
+                        st.write(f"**Density:** {structure.density:.2f} g/cm³")
+
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+                    st.exception(e)
 
     with tab3:
-        st.markdown("**Prediction Results (Example)**")
+        st.subheader("Upload Structure File")
 
-        # Mock results table
-        mock_results = pd.DataFrame({
-            "Property": ["Formation Energy", "Band Gap", "Bulk Modulus"],
-            "Predicted Value": [-2.34, 0.15, 180.5],
-            "Unit": ["eV/atom", "eV", "GPa"],
-            "Uncertainty": [0.12, 0.05, 15.2]
-        })
+        st.markdown("""
+        Upload a crystal structure file (CIF or POSCAR format) and predict formation energy.
+        """)
 
-        st.dataframe(mock_results, use_container_width=True)
-        st.download_button("📥 Download Results", "mock data", disabled=True)
+        uploaded_file = st.file_uploader(
+            "Choose structure file",
+            type=['cif', 'poscar', 'vasp', 'POSCAR'],
+            help="Upload CIF or POSCAR format"
+        )
 
-    st.markdown("---")
+        if uploaded_file is not None:
+            try:
+                import tempfile
+                from crystal_graph import structure_to_graph, structure_to_graph_with_calphad
 
-    st.markdown("""
-    **To enable this feature:**
-    1. Train GNN models on Materials Project data
-    2. Save trained model checkpoints
-    3. Implement prediction interface
-    4. Add uncertainty quantification
+                # Save to temp file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=uploaded_file.name) as tmp_file:
+                    tmp_file.write(uploaded_file.getvalue())
+                    tmp_path = tmp_file.name
 
-    **Estimated completion:** 2-3 weeks
-    """)
+                # Load structure
+                with st.spinner("Loading structure..."):
+                    structure = Structure.from_file(tmp_path)
+
+                st.success(f"✅ Loaded structure: {structure.composition.reduced_formula}")
+
+                if st.button("🚀 Predict Formation Energy", type="primary", use_container_width=True):
+                    # Convert to graph
+                    with st.spinner("Converting to graph..."):
+                        try:
+                            graph = structure_to_graph_with_calphad(structure, cutoff=8.0, max_neighbors=12)
+                            use_calphad = True
+                        except:
+                            graph = structure_to_graph(structure, cutoff=8.0, max_neighbors=12)
+                            use_calphad = False
+
+                    # Load and predict
+                    with st.spinner("Predicting..."):
+                        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+
+                        if use_calphad:
+                            model = CGCNN_CALPHAD_Regressor(
+                                input_node_dim=13,
+                                input_edge_dim=2,
+                                node_feature_dim=node_dim,
+                                edge_feature_dim=32,
+                                hidden_dim=hidden_dim,
+                                n_conv=n_conv,
+                                n_hidden=n_hidden
+                            )
+                        else:
+                            model = CGCNN(
+                                node_feature_dim=node_dim,
+                                edge_feature_dim=1,
+                                hidden_dim=hidden_dim,
+                                n_conv=n_conv,
+                                n_hidden=n_hidden,
+                                output_dim=1
+                            )
+
+                        model.load_state_dict(checkpoint['model_state_dict'])
+                        model.eval()
+
+                        with torch.no_grad():
+                            prediction = model(graph)
+                            if isinstance(prediction, dict):
+                                formation_energy = prediction['formation_energy'].item()
+                            else:
+                                formation_energy = prediction.item()
+
+                    # Results
+                    st.markdown("---")
+                    st.markdown("### 🎯 Prediction Results")
+
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.metric(
+                            "Formation Energy",
+                            f"{formation_energy:.4f} eV/atom",
+                            delta="Stable" if formation_energy < 0 else "Unstable",
+                            delta_color="normal" if formation_energy < 0 else "inverse"
+                        )
+
+                    with col2:
+                        st.metric("Formula", structure.composition.reduced_formula)
+
+                    # Interpretation
+                    if formation_energy < 0:
+                        st.success("✅ **Stable** - Negative formation energy indicates stability.")
+                    else:
+                        st.error("❌ **Unstable** - Positive formation energy suggests decomposition.")
+
+                    # Structure details
+                    with st.expander("📊 Structure Details"):
+                        st.write(f"**Full Formula:** {structure.composition.formula}")
+                        st.write(f"**Number of Sites:** {len(structure)}")
+                        st.write(f"**Volume:** {structure.volume:.2f} ų")
+                        st.write(f"**Density:** {structure.density:.2f} g/cm³")
+
+                # Cleanup
+                os.unlink(tmp_path)
+
+            except Exception as e:
+                st.error(f"❌ Error loading file: {e}")
+                st.exception(e)
 
 # Footer
 st.markdown("---")
