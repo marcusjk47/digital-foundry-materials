@@ -100,21 +100,25 @@ class LargeScaleCollector:
                 print(f"  Materials collected: {checkpoint['materials_collected']}")
                 print(f"  Last material ID: {checkpoint.get('last_material_id', 'N/A')}")
                 print()
-        else:
-            # Create new dataset
-            self.manager.create_dataset(
-                name=dataset_name,
-                description=f"Large-scale collection: {elements or chemsys}",
-                shard_size=shard_size,
-                metadata={
-                    "elements": elements,
-                    "chemsys": chemsys,
-                    "target_size": target_size,
-                    "metallic_only": metallic_only,
-                    "stable_only": stable_only,
-                    "use_calphad": use_calphad
-                }
-            )
+
+        if checkpoint is None:
+            # Create new dataset or initialize checkpoint for existing dataset
+            if not dataset_dir.exists():
+                self.manager.create_dataset(
+                    name=dataset_name,
+                    description=f"Large-scale collection: {elements or chemsys}",
+                    shard_size=shard_size,
+                    metadata={
+                        "elements": elements,
+                        "chemsys": chemsys,
+                        "target_size": target_size,
+                        "metallic_only": metallic_only,
+                        "stable_only": stable_only,
+                        "use_calphad": use_calphad
+                    }
+                )
+
+            # Initialize checkpoint
             checkpoint = {
                 "dataset_name": dataset_name,
                 "materials_collected": 0,
