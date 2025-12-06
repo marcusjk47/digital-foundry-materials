@@ -687,24 +687,85 @@ elif model_mode == "🎓 Train Model":
     with tab2:
         st.subheader("🎓 Train GNN Model")
 
-        # Check for available datasets
+        # Check for available datasets (both old .pkl and new sharded)
         datasets_dir = Path("datasets")
-        if datasets_dir.exists():
-            dataset_files = list(datasets_dir.glob("*.pkl"))
-        else:
-            dataset_files = []
+        available_datasets = {}  # name -> (type, path)
 
-        if not dataset_files:
-            st.warning("⚠️ No datasets found. Please collect data first in the 'Data Collection' tab.")
+        if datasets_dir.exists():
+            # Old single-file datasets
+            for pkl_file in datasets_dir.glob("*.pkl"):
+                available_datasets[pkl_file.stem] = ("single_file", str(pkl_file))
+
+            # New sharded datasets
+            for subdir in datasets_dir.iterdir():
+                if subdir.is_dir() and (subdir / "manifest.json").exists():
+                    available_datasets[subdir.name] = ("sharded", str(subdir / "manifest.json"))
+
+        if not available_datasets:
+            st.warning("⚠️ No datasets found. Please collect data first in the 'Data Collection' tab or Dataset Manager.")
             st.stop()
 
         # Dataset selection
-        st.markdown("**1. Select Dataset**")
-        selected_dataset = st.selectbox(
-            "Choose dataset:",
-            [f.name for f in dataset_files],
-            help="Select a previously collected dataset"
+        st.markdown("**1. Select Dataset(s)**")
+
+        # Single or multi-dataset
+        dataset_mode = st.radio(
+            "Training mode:",
+            ["Single Dataset", "Multiple Datasets (Combined)"],
+            horizontal=True,
+            help="Train on one dataset or combine multiple"
         )
+
+        if dataset_mode == "Single Dataset":
+            selected_dataset_name = st.selectbox(
+                "Choose dataset:",
+                list(available_datasets.keys()),
+                help="Select a dataset to train on"
+            )
+            selected_datasets = [selected_dataset_name]
+        else:
+            selected_datasets = st.multiselect(
+                "Choose datasets to combine:",
+                list(available_datasets.keys()),
+                help="Select multiple datasets to train on together"
+            )
+
+            if not selected_datasets:
+                st.info("👆 Select at least one dataset above")
+                st.stop()
+
+        # Show dataset info
+        st.markdown("**Dataset Info:**")
+        total_materials = 0
+
+        for ds_name in selected_datasets:
+            ds_type, ds_path = available_datasets[ds_name]
+
+            if ds_type == "sharded":
+                # Load manifest
+                import json
+                with open(ds_path, 'r') as f:
+                    manifest = json.load(f)
+                count = manifest['total_materials']
+                info_str = f"📊 {ds_name}: {count:,} materials (sharded, {manifest['num_shards']} shards)"
+            else:
+                # Old format - try to load and count
+                try:
+                    from gnn_data_collection import load_graph_dataset
+                    graphs = load_graph_dataset(ds_path)
+                    count = len(graphs)
+                    info_str = f"📁 {ds_name}: {count:,} materials (single file)"
+                except:
+                    count = 0
+                    info_str = f"📁 {ds_name}: Unknown size (single file)"
+
+            st.write(info_str)
+            total_materials += count
+
+        if len(selected_datasets) > 1:
+            st.info(f"**Combined total:** {total_materials:,} materials")
+
+        selected_dataset = selected_datasets[0] if len(selected_datasets) == 1 else None
 
         st.markdown("---")
 
@@ -732,56 +793,138 @@ elif model_mode == "🎓 Train Model":
         # Start training button
         if st.button("🚀 Start Training", type="primary", use_container_width=True):
             try:
-                from gnn_data_collection import load_graph_dataset
-                from gnn_dataset import CrystalGraphDataset, split_dataset, create_data_loaders
                 from gnn_train import GNNTrainer, print_evaluation_results
                 import time
 
-                # Load dataset
-                with st.spinner("Loading dataset..."):
-                    graphs = load_graph_dataset(f"datasets/{selected_dataset}")
-                    dataset = CrystalGraphDataset(graphs)
+                # Determine dataset type and create appropriate loaders
+                has_calphad = False
+                dataset_size = 0
 
-                st.success(f"✅ Loaded {len(dataset)} graphs")
+                # Check if we're using sharded datasets
+                using_sharded = any(available_datasets[ds][0] == "sharded" for ds in selected_datasets)
 
-                # Detect if dataset has CALPHAD features
-                sample_graph = graphs[0]
-                node_feature_dim = sample_graph.x.shape[1] if len(sample_graph.x.shape) > 1 else 1
-                edge_feature_dim = sample_graph.edge_attr.shape[1] if len(sample_graph.edge_attr.shape) > 1 else 1
-                has_calphad = (node_feature_dim == 13 and edge_feature_dim == 2)
+                if len(selected_datasets) > 1:
+                    # Multi-dataset training
+                    st.info(f"🔄 **Multi-dataset training mode:** Combining {len(selected_datasets)} datasets")
+
+                    with st.spinner("Loading multiple datasets..."):
+                        from gnn_dataset_sharded import create_multi_dataset_loaders
+
+                        # Get all manifest paths
+                        manifest_paths = []
+                        for ds_name in selected_datasets:
+                            ds_type, ds_path = available_datasets[ds_name]
+                            if ds_type == "sharded":
+                                manifest_paths.append(ds_path)
+                            else:
+                                st.error(f"❌ Dataset '{ds_name}' is not sharded. Multi-dataset training requires all datasets to be sharded.")
+                                st.info("💡 **Tip:** Use the Dataset Manager to convert or collect datasets in sharded format.")
+                                st.stop()
+
+                        # Create combined dataloaders
+                        train_loader, val_loader, test_loader = create_multi_dataset_loaders(
+                            manifest_paths=manifest_paths,
+                            batch_size=batch_size,
+                            train_ratio=train_ratio,
+                            val_ratio=val_ratio,
+                            test_ratio=1.0 - train_ratio - val_ratio,
+                            num_workers=0,
+                            cache_size=3
+                        )
+
+                        dataset_size = total_materials
+
+                        # Detect CALPHAD from first batch
+                        sample_batch = next(iter(train_loader))
+                        node_feature_dim = sample_batch.x.shape[1] if len(sample_batch.x.shape) > 1 else 1
+                        edge_feature_dim = sample_batch.edge_attr.shape[1] if len(sample_batch.edge_attr.shape) > 1 else 1
+                        has_calphad = (node_feature_dim == 13 and edge_feature_dim == 2)
+
+                elif using_sharded:
+                    # Single sharded dataset
+                    ds_type, ds_path = available_datasets[selected_datasets[0]]
+                    st.info(f"📊 **Sharded dataset mode:** Memory-efficient loading")
+
+                    with st.spinner("Loading sharded dataset..."):
+                        from gnn_dataset_sharded import create_sharded_dataloaders
+
+                        train_loader, val_loader, test_loader = create_sharded_dataloaders(
+                            manifest_path=ds_path,
+                            batch_size=batch_size,
+                            train_ratio=train_ratio,
+                            val_ratio=val_ratio,
+                            test_ratio=1.0 - train_ratio - val_ratio,
+                            num_workers=0,
+                            cache_size=3
+                        )
+
+                        # Get dataset size from manifest
+                        import json
+                        with open(ds_path, 'r') as f:
+                            manifest = json.load(f)
+                        dataset_size = manifest['total_materials']
+                        has_calphad = manifest.get('calphad_enhanced', False)
+
+                        # Verify CALPHAD from first batch if not in manifest
+                        if not has_calphad:
+                            sample_batch = next(iter(train_loader))
+                            node_feature_dim = sample_batch.x.shape[1] if len(sample_batch.x.shape) > 1 else 1
+                            edge_feature_dim = sample_batch.edge_attr.shape[1] if len(sample_batch.edge_attr.shape) > 1 else 1
+                            has_calphad = (node_feature_dim == 13 and edge_feature_dim == 2)
+
+                else:
+                    # Old single-file dataset (backwards compatibility)
+                    ds_type, ds_path = available_datasets[selected_datasets[0]]
+                    st.info(f"📁 **Single-file dataset mode:** Loading entire dataset into memory")
+
+                    with st.spinner("Loading dataset..."):
+                        from gnn_data_collection import load_graph_dataset
+                        from gnn_dataset import CrystalGraphDataset, split_dataset, create_data_loaders
+
+                        graphs = load_graph_dataset(ds_path)
+                        dataset = CrystalGraphDataset(graphs)
+                        dataset_size = len(dataset)
+
+                        # Detect CALPHAD features
+                        sample_graph = graphs[0]
+                        node_feature_dim = sample_graph.x.shape[1] if len(sample_graph.x.shape) > 1 else 1
+                        edge_feature_dim = sample_graph.edge_attr.shape[1] if len(sample_graph.edge_attr.shape) > 1 else 1
+                        has_calphad = (node_feature_dim == 13 and edge_feature_dim == 2)
+
+                        # Split dataset
+                        train_dataset, val_dataset, test_dataset = split_dataset(
+                            dataset,
+                            train_ratio=train_ratio,
+                            val_ratio=val_ratio,
+                            test_ratio=1.0 - train_ratio - val_ratio
+                        )
+
+                        # Validate dataset sizes
+                        if len(train_dataset) == 0:
+                            st.error("❌ **Training set is empty!** Please collect more data or adjust split ratios.")
+                            st.stop()
+
+                        if len(val_dataset) == 0:
+                            st.error("❌ **Validation set is empty!** Please collect more data or adjust split ratios.")
+                            st.info("💡 **Tip:** Increase validation % or collect more materials")
+                            st.stop()
+
+                        # Create data loaders
+                        train_loader, val_loader, test_loader = create_data_loaders(
+                            train_dataset, val_dataset, test_dataset,
+                            batch_size=batch_size
+                        )
+
+                # Show dataset info
+                st.success(f"✅ Loaded {dataset_size:,} materials")
 
                 if has_calphad:
                     st.info("🔬 **CALPHAD-enhanced dataset detected!**")
-                    st.info(f"   Node features: {node_feature_dim}D (atomic# + element + CALPHAD)")
-                    st.info(f"   Edge features: {edge_feature_dim}D (distance + mixing energy)")
+                    st.info("   Node features: 13D (atomic# + element + CALPHAD)")
+                    st.info("   Edge features: 2D (distance + mixing energy)")
 
-                # Split dataset
-                with st.spinner("Splitting dataset..."):
-                    train_dataset, val_dataset, test_dataset = split_dataset(
-                        dataset,
-                        train_ratio=train_ratio,
-                        val_ratio=val_ratio,
-                        test_ratio=test_ratio
-                    )
-
-                # Validate dataset sizes
-                if len(train_dataset) == 0:
-                    st.error("❌ **Training set is empty!** Please collect more data or adjust split ratios.")
-                    st.stop()
-
-                if len(val_dataset) == 0:
-                    st.error("❌ **Validation set is empty!** Please collect more data or adjust split ratios.")
-                    st.info("💡 **Tip:** Increase validation % or collect more materials")
-                    st.stop()
-
-                if len(dataset) < 10:
-                    st.warning(f"⚠️ **Small dataset warning:** Only {len(dataset)} samples. Recommend 100+ for reliable training.")
-
-                # Create data loaders
-                train_loader, val_loader, test_loader = create_data_loaders(
-                    train_dataset, val_dataset, test_dataset,
-                    batch_size=batch_size
-                )
+                if dataset_size < 10:
+                    st.warning(f"⚠️ **Small dataset warning:** Only {dataset_size} samples. Recommend 100+ for reliable training.")
 
                 # Create model (use CALPHAD model if CALPHAD features detected)
                 if has_calphad:
@@ -916,40 +1059,88 @@ elif model_mode == "🎓 Train Model":
             [f.name for f in checkpoint_files]
         )
 
-        # Dataset selection for evaluation
-        if datasets_dir.exists():
-            dataset_files = list(datasets_dir.glob("*.pkl"))
-        else:
-            dataset_files = []
+        # Dataset selection for evaluation (support both old and new formats)
+        eval_available_datasets = {}  # name -> (type, path)
 
-        if dataset_files:
+        if datasets_dir.exists():
+            # Old single-file datasets
+            for pkl_file in datasets_dir.glob("*.pkl"):
+                eval_available_datasets[pkl_file.stem] = ("single_file", str(pkl_file))
+
+            # New sharded datasets
+            for subdir in datasets_dir.iterdir():
+                if subdir.is_dir() and (subdir / "manifest.json").exists():
+                    eval_available_datasets[subdir.name] = ("sharded", str(subdir / "manifest.json"))
+
+        if eval_available_datasets:
             eval_dataset = st.selectbox(
                 "Select dataset for evaluation:",
-                [f.name for f in dataset_files]
+                list(eval_available_datasets.keys())
             )
+
+            # Show dataset info
+            ds_type, ds_path = eval_available_datasets[eval_dataset]
+            if ds_type == "sharded":
+                import json
+                with open(ds_path, 'r') as f:
+                    manifest = json.load(f)
+                st.info(f"📊 {manifest['total_materials']:,} materials (sharded, {manifest['num_shards']} shards)")
+            else:
+                st.info(f"📁 Single-file dataset")
 
             if st.button("📊 Evaluate Model", type="primary"):
                 try:
-                    from gnn_data_collection import load_graph_dataset
-                    from gnn_dataset import CrystalGraphDataset, create_data_loaders
                     from gnn_train import GNNTrainer
 
-                    # Load dataset
-                    graphs = load_graph_dataset(f"datasets/{eval_dataset}")
-                    dataset = CrystalGraphDataset(graphs)
+                    # Load dataset based on type
+                    has_calphad_eval = False
 
-                    # Detect if dataset has CALPHAD features
-                    sample_graph = graphs[0]
-                    node_feature_dim_eval = sample_graph.x.shape[1] if len(sample_graph.x.shape) > 1 else 1
-                    edge_feature_dim_eval = sample_graph.edge_attr.shape[1] if len(sample_graph.edge_attr.shape) > 1 else 1
-                    has_calphad_eval = (node_feature_dim_eval == 13 and edge_feature_dim_eval == 2)
+                    if ds_type == "sharded":
+                        # Sharded dataset
+                        st.info("📊 Loading sharded dataset...")
+                        from gnn_dataset_sharded import ShardedCrystalGraphDataset
+                        from torch_geometric.loader import DataLoader
+
+                        dataset = ShardedCrystalGraphDataset(
+                            manifest_path=ds_path,
+                            cache_size=3
+                        )
+
+                        # Detect CALPHAD
+                        import json
+                        with open(ds_path, 'r') as f:
+                            manifest = json.load(f)
+                        has_calphad_eval = manifest.get('calphad_enhanced', False)
+
+                        # Verify from first sample
+                        if not has_calphad_eval:
+                            sample_graph = dataset[0]
+                            node_feature_dim_eval = sample_graph.x.shape[1] if len(sample_graph.x.shape) > 1 else 1
+                            edge_feature_dim_eval = sample_graph.edge_attr.shape[1] if len(sample_graph.edge_attr.shape) > 1 else 1
+                            has_calphad_eval = (node_feature_dim_eval == 13 and edge_feature_dim_eval == 2)
+
+                        data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
+
+                    else:
+                        # Old single-file dataset
+                        st.info("📁 Loading single-file dataset...")
+                        from gnn_data_collection import load_graph_dataset
+                        from gnn_dataset import CrystalGraphDataset
+                        from torch_geometric.loader import DataLoader
+
+                        graphs = load_graph_dataset(ds_path)
+                        dataset = CrystalGraphDataset(graphs)
+
+                        # Detect CALPHAD features
+                        sample_graph = graphs[0]
+                        node_feature_dim_eval = sample_graph.x.shape[1] if len(sample_graph.x.shape) > 1 else 1
+                        edge_feature_dim_eval = sample_graph.edge_attr.shape[1] if len(sample_graph.edge_attr.shape) > 1 else 1
+                        has_calphad_eval = (node_feature_dim_eval == 13 and edge_feature_dim_eval == 2)
+
+                        data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
 
                     if has_calphad_eval:
                         st.info("🔬 CALPHAD-enhanced dataset detected")
-
-                    # Create data loader (must use PyTorch Geometric DataLoader for graph data)
-                    from torch_geometric.loader import DataLoader
-                    data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
 
                     # Load model (use CALPHAD model if CALPHAD features detected)
                     if has_calphad_eval:
