@@ -509,7 +509,7 @@ elif model_mode == "🎓 Train Model":
     st.markdown("---")
 
     # Training workflow tabs
-    tab1, tab2, tab3 = st.tabs(["1️⃣ Data Collection", "2️⃣ Training", "3️⃣ Evaluation"])
+    tab1, tab2, tab3, tab4 = st.tabs(["1️⃣ Data Collection", "2️⃣ Training", "3️⃣ Evaluation", "📚 How It Works"])
 
     with tab1:
         st.subheader("📥 Collect Training Data from Materials Project")
@@ -1196,6 +1196,350 @@ elif model_mode == "🎓 Train Model":
                 except Exception as e:
                     st.error(f"Error: {e}")
                     st.exception(e)
+
+    with tab4:
+        st.header("📚 How Graph Neural Networks Learn from Crystal Structures")
+
+        st.markdown("""
+        This guide explains the AI training process in simple terms, perfect for high school students
+        learning about machine learning and materials science!
+        """)
+
+        # Section 1: The Big Picture
+        st.markdown("---")
+        st.markdown("### 🎯 The Big Picture: What Are We Trying to Do?")
+
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            st.markdown("""
+            **Goal:** Teach a computer to predict material properties (like strength, energy, conductivity)
+            just by looking at how atoms are arranged in the material.
+
+            **Why This Matters:**
+            - Testing materials in real life is expensive and time-consuming
+            - We can explore millions of potential materials virtually
+            - Speeds up discovery of better batteries, stronger alloys, and new technologies
+
+            **The Challenge:**
+            - Materials are 3D structures with billions of atoms
+            - Different materials have different numbers of atoms
+            - Traditional AI (like recognizing cats in photos) doesn't work for 3D structures
+            """)
+
+        with col2:
+            st.info("""
+            **Real-World Analogy**
+
+            Imagine trying to predict how tasty a recipe will be just by looking at the ingredient list
+            and cooking instructions - without actually cooking it!
+
+            That's what we're doing with materials.
+            """)
+
+        # Section 2: Representing Materials as Graphs
+        st.markdown("---")
+        st.markdown("### 🕸️ Step 1: Turning Materials into Graphs")
+
+        st.markdown("""
+        **The Problem:** Computers can't directly understand 3D crystal structures.
+
+        **The Solution:** We represent materials as **graphs** (networks), like a social network!
+        """)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("""
+            **In a Social Network:**
+            - **Nodes** = People
+            - **Edges** = Friendships
+            - Each person has info (age, location, interests)
+            - Connections show who knows who
+            """)
+
+        with col2:
+            st.markdown("""
+            **In a Crystal Structure:**
+            - **Nodes** = Atoms
+            - **Edges** = Atomic bonds/neighbors
+            - Each atom has info (element type, position)
+            - Connections show which atoms are nearby
+            """)
+
+        st.info("""
+        **Example:** An iron-nickel alloy (Fe-Ni)
+        - 🔴 Red nodes = Iron atoms
+        - 🔵 Blue nodes = Nickel atoms
+        - Lines between them = atoms that are neighbors (within 8 Angstroms)
+        - Each node remembers: "I'm an Iron atom at position (2.5, 1.3, 4.1)"
+        - Each edge remembers: "These two atoms are 2.8 Angstroms apart"
+        """)
+
+        # Section 3: The Training Process
+        st.markdown("---")
+        st.markdown("### 🎓 Step 2: Training the Neural Network")
+
+        st.markdown("""
+        Now that we have graphs, we need to teach the AI to predict properties. Here's how:
+        """)
+
+        # Substep 1
+        st.markdown("#### 📚 1. Gathering Examples (Training Data)")
+        st.markdown("""
+        - We collect thousands of materials with **known** properties from databases (Materials Project)
+        - Example: "Steel #1 has formation energy of -0.45 eV/atom"
+        - Each material becomes a graph + its actual measured property
+        - This is like a textbook with worked examples!
+        """)
+
+        # Substep 2
+        st.markdown("#### 🧠 2. The Neural Network's Job")
+        st.markdown("""
+        Think of the neural network as a student learning to solve problems:
+
+        **What it does:**
+        1. **Looks at each atom** (node) and its features
+        2. **Passes messages between neighboring atoms** - each atom learns from its neighbors
+           - "Hey, I'm Iron and I'm next to a Nickel atom!"
+           - This happens multiple times (we call these "convolutional layers")
+        3. **Combines all information** to understand the whole structure
+        4. **Makes a prediction** - "I think this material's formation energy is -0.42 eV/atom"
+
+        **The Magic:** The network learns what patterns matter for each property!
+        - For strength: Maybe it learns to look for grain boundaries
+        - For conductivity: Maybe it learns to look for electron-rich regions
+        - For energy: Maybe it learns to look at bond types
+        """)
+
+        # Substep 3
+        st.markdown("#### 📏 3. Checking the Answers (Loss Calculation)")
+        st.markdown("""
+        After each prediction, we check how wrong the AI was:
+
+        - **Prediction:** -0.42 eV/atom
+        - **Actual answer:** -0.45 eV/atom
+        - **Error:** 0.03 eV/atom (not too bad!)
+
+        We calculate the **average error** across all materials. This is called the **"loss"**.
+
+        **Goal:** Make the loss as small as possible!
+        """)
+
+        # Substep 4
+        st.markdown("#### ⚙️ 4. Learning from Mistakes (Backpropagation)")
+        st.markdown("""
+        Here's where the "learning" happens:
+
+        1. The AI figures out **which parts** of its calculation caused the error
+        2. It makes **tiny adjustments** to its internal numbers (called "weights")
+        3. These adjustments make it slightly better at the next prediction
+
+        **Analogy:** Like a basketball player adjusting their shooting technique after missing a shot.
+        Each adjustment is tiny, but after thousands of attempts, they become accurate!
+        """)
+
+        # Substep 5
+        st.markdown("#### 🔄 5. Repeating (Epochs)")
+        st.markdown("""
+        The AI goes through the **entire dataset** multiple times (each pass is called an "epoch"):
+
+        - **Epoch 1:** Loss = 0.850 (lots of mistakes!)
+        - **Epoch 20:** Loss = 0.234 (getting better!)
+        - **Epoch 50:** Loss = 0.089 (pretty good!)
+        - **Epoch 100:** Loss = 0.042 (excellent!)
+
+        **When to stop?** We stop when the loss stops improving (this prevents "overfitting" - memorizing
+        instead of understanding).
+        """)
+
+        # Section 4: Testing
+        st.markdown("---")
+        st.markdown("### ✅ Step 3: Testing - Did It Really Learn?")
+
+        st.markdown("""
+        We use a **test set** - materials the AI has **never seen** during training!
+
+        **Why?** To make sure it learned general patterns, not just memorized the training data.
+
+        **Metrics we check:**
+        - **MAE (Mean Absolute Error):** Average size of mistakes
+          - Example: MAE = 0.05 eV/atom means predictions are typically off by ±0.05
+        - **R² Score:** How well predictions match reality (1.0 = perfect, 0.0 = random guessing)
+          - Example: R² = 0.92 means 92% accuracy!
+        """)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.success("""
+            **Good Model:**
+            - MAE: 0.05 eV/atom
+            - R²: 0.92
+            - Predictions close to actual values
+            - Works on new materials
+            """)
+
+        with col2:
+            st.error("""
+            **Bad Model:**
+            - MAE: 0.35 eV/atom
+            - R²: 0.45
+            - Predictions scattered randomly
+            - Doesn't generalize well
+            """)
+
+        # Section 5: What Makes Our Approach Special
+        st.markdown("---")
+        st.markdown("### 🌟 What Makes Graph Neural Networks Special?")
+
+        st.markdown("""
+        **Traditional Machine Learning:**
+        - Only uses composition: "This material is 50% Iron, 50% Nickel"
+        - Ignores structure: Doesn't know **how** atoms are arranged
+        - Limited accuracy
+
+        **Graph Neural Networks (What We Use):**
+        - Uses **both** composition **and** 3D structure
+        - Knows which atoms are neighbors
+        - Understands crystal geometry
+        - Much better predictions!
+
+        **Even Better - CALPHAD Features:**
+        - We add thermodynamic data (melting point, heat capacity, mixing energy)
+        - This is like giving the AI a "cheat sheet" with extra physics knowledge
+        - Improves predictions by 10-20%!
+        """)
+
+        # Section 6: Real Example
+        st.markdown("---")
+        st.markdown("### 🔬 Real Example: Training on Fe-Ni Alloys")
+
+        st.markdown("""
+        Let's walk through a concrete example:
+
+        **1. Collect Data:**
+        - Download 1,000 Fe-Ni materials from Materials Project
+        - Each has known formation energy (how stable it is)
+
+        **2. Convert to Graphs:**
+        - Each material becomes a graph with ~50-200 atoms (nodes)
+        - Each atom connects to ~12 nearest neighbors (edges)
+
+        **3. Split Data:**
+        - Training: 800 materials (80%) - AI learns from these
+        - Validation: 100 materials (10%) - Check progress during training
+        - Test: 100 materials (10%) - Final grade after training
+
+        **4. Train:**
+        - Run for 100 epochs (go through training data 100 times)
+        - Batch size: 32 (look at 32 materials at once)
+        - Learning rate: 0.001 (how big each adjustment is)
+        - Takes ~10 minutes on a laptop
+
+        **5. Results:**
+        - Training Loss: 0.035 eV/atom
+        - Test MAE: 0.048 eV/atom
+        - Test R²: 0.94 (94% accurate!)
+
+        **6. Use It:**
+        - Now we can predict formation energy for **any** Fe-Ni composition
+        - No need to run expensive quantum simulations!
+        - Can explore millions of potential alloys quickly
+        """)
+
+        # Section 7: Key Takeaways
+        st.markdown("---")
+        st.markdown("### 🎓 Key Takeaways for Students")
+
+        st.markdown("""
+        **Main Ideas:**
+
+        1. **AI learns from examples**, just like students learn from textbooks
+        2. **Graphs let us represent 3D structures** in a way computers can understand
+        3. **Neural networks find patterns** humans might miss
+        4. **Training = showing examples and correcting mistakes** thousands of times
+        5. **Testing on unseen data** ensures the AI truly learned, not just memorized
+
+        **Why This Matters:**
+
+        - 🔋 **Batteries:** Find better electrode materials for electric cars
+        - 🏗️ **Construction:** Design stronger, lighter building materials
+        - 🌡️ **Climate:** Discover catalysts for carbon capture
+        - 💻 **Electronics:** Create faster, more efficient semiconductors
+        - 🚀 **Space:** Develop materials that withstand extreme conditions
+
+        **You Can Do This Too!**
+
+        This same approach works for:
+        - Drug discovery (molecules as graphs)
+        - Social network analysis (people as graphs)
+        - Traffic optimization (intersections as graphs)
+        - Protein folding (amino acids as graphs)
+
+        The fundamental concept - representing complex systems as graphs and learning patterns -
+        applies to countless fields!
+        """)
+
+        # Interactive Quiz
+        st.markdown("---")
+        st.markdown("### 🧪 Test Your Understanding!")
+
+        with st.expander("❓ Quiz: Check if you understood the concepts"):
+            q1 = st.radio(
+                "1. What do 'nodes' represent in our crystal structure graphs?",
+                ["Chemical bonds", "Atoms", "Properties", "Energies"],
+                index=None
+            )
+            if q1 == "Atoms":
+                st.success("✅ Correct! Each node is an individual atom.")
+            elif q1:
+                st.error("❌ Try again! Think about what the graph represents.")
+
+            q2 = st.radio(
+                "2. What is 'backpropagation'?",
+                [
+                    "Loading data backwards",
+                    "The process where the AI adjusts its parameters to reduce errors",
+                    "Testing the model",
+                    "Converting structures to graphs"
+                ],
+                index=None
+            )
+            if q2 == "The process where the AI adjusts its parameters to reduce errors":
+                st.success("✅ Correct! Backpropagation is how the network learns from mistakes.")
+            elif q2:
+                st.error("❌ Not quite. Backpropagation is about learning from errors.")
+
+            q3 = st.radio(
+                "3. Why do we use a separate test set?",
+                [
+                    "To save computational time",
+                    "To make training faster",
+                    "To verify the model works on materials it hasn't seen before",
+                    "To increase the dataset size"
+                ],
+                index=None
+            )
+            if q3 == "To verify the model works on materials it hasn't seen before":
+                st.success("✅ Correct! We need to ensure the model generalizes, not just memorizes.")
+            elif q3:
+                st.error("❌ Think about why we separate data. What are we testing?")
+
+            q4 = st.radio(
+                "4. What advantage do Graph Neural Networks have over traditional ML?",
+                [
+                    "They're faster",
+                    "They use composition AND 3D atomic structure",
+                    "They need less data",
+                    "They're simpler"
+                ],
+                index=None
+            )
+            if q4 == "They use composition AND 3D atomic structure":
+                st.success("✅ Correct! GNNs leverage structural information, not just composition.")
+            elif q4:
+                st.error("❌ The key advantage is about what information GNNs can use.")
 
 elif model_mode == "🔮 Prediction (Coming Soon)":
     st.header("🔮 Property Prediction (Coming Soon)")
