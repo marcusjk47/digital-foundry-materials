@@ -20,6 +20,8 @@ from pathlib import Path
 import sys
 import os
 import time
+import io
+import zipfile
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -74,6 +76,27 @@ if not MODULES_AVAILABLE:
 
 # Initialize manager
 manager = DatasetManager()
+
+# Helper function to create dataset zip
+def create_dataset_zip(dataset_name: str) -> bytes:
+    """Create a zip file of the entire dataset."""
+    dataset_dir = manager.base_dir / dataset_name
+
+    # Create in-memory zip file
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # Add manifest
+        manifest_path = dataset_dir / "manifest.json"
+        zip_file.write(manifest_path, f"{dataset_name}/manifest.json")
+
+        # Add all shards
+        shards_dir = dataset_dir / "shards"
+        for shard_file in shards_dir.glob("*.pkl"):
+            zip_file.write(shard_file, f"{dataset_name}/shards/{shard_file.name}")
+
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue()
 
 # Sidebar
 st.sidebar.title("⚙️ Settings")
@@ -203,7 +226,7 @@ with tab1:
                 # Actions
                 st.markdown("### Actions")
 
-                action_col1, action_col2, action_col3 = st.columns(3)
+                action_col1, action_col2, action_col3, action_col4 = st.columns(4)
 
                 with action_col1:
                     if st.button("📥 Load Sample", use_container_width=True):
@@ -220,6 +243,20 @@ with tab1:
                                 })
 
                 with action_col2:
+                    # Download button
+                    try:
+                        zip_data = create_dataset_zip(selected_dataset)
+                        st.download_button(
+                            label="💾 Download",
+                            data=zip_data,
+                            file_name=f"{selected_dataset}.zip",
+                            mime="application/zip",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.error(f"Error creating zip: {e}")
+
+                with action_col3:
                     if st.button("🔍 Deduplicate", use_container_width=True):
                         with st.spinner("Checking for duplicates..."):
                             removed = manager.deduplicate_dataset(selected_dataset)
@@ -229,7 +266,7 @@ with tab1:
                             else:
                                 st.info("No duplicates found")
 
-                with action_col3:
+                with action_col4:
                     if st.button("🗑️ Delete Dataset", type="secondary", use_container_width=True):
                         st.warning("⚠️ This will permanently delete the dataset!")
                         confirm = st.checkbox(f"Confirm delete '{selected_dataset}'")
@@ -501,6 +538,7 @@ with tab4:
     #### Browse Datasets
     - View all available datasets
     - See statistics (size, elements, disk usage)
+    - **Download datasets as zip files** for backup/sharing
     - Load samples, deduplicate, delete
 
     #### Collect Data
@@ -566,6 +604,34 @@ with tab4:
     - ~50 KB per material
     - 10,000 materials: ~500 MB
     - 50,000 materials: ~2.5 GB
+
+    ---
+
+    ### 💾 Downloading & Sharing Datasets
+
+    **Download:**
+    - Click "💾 Download" button in Browse tab
+    - Downloads dataset as `.zip` file
+    - Includes all shards and manifest.json
+    - Can be used for backup or sharing
+
+    **Upload/Import:**
+    - Extract downloaded zip to `datasets/` folder
+    - Dataset structure:
+      ```
+      datasets/
+      └── dataset_name/
+          ├── manifest.json
+          └── shards/
+              └── shard_*.pkl
+      ```
+    - Refresh Browse tab to see imported dataset
+
+    **Sharing with Others:**
+    1. Download dataset as zip
+    2. Share zip file
+    3. Recipient extracts to their `datasets/` folder
+    4. Ready to use immediately!
     """)
 
 st.sidebar.markdown("---")
