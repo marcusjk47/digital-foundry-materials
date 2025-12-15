@@ -293,7 +293,230 @@ if model_mode == "🎓 Train Model":
     st.markdown("---")
 
     # Training workflow tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["1️⃣ Data Collection", "2️⃣ Training", "3️⃣ Evaluation", "📚 How It Works"])
+    tab0, tab1, tab2, tab3, tab4 = st.tabs(["🔍 Explore Materials", "1️⃣ Data Collection", "2️⃣ Training", "3️⃣ Evaluation", "📚 How It Works"])
+
+    with tab0:
+        st.subheader("🔍 Explore Materials Project Database")
+
+        st.markdown("""
+        Search and browse available materials in the Materials Project database before collecting datasets.
+        This helps you understand what's available and plan your training data collection.
+        """)
+
+        # Check for API key
+        api_key = os.environ.get("MP_API_KEY")
+        if not api_key:
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+                api_key = os.environ.get("MP_API_KEY")
+            except:
+                pass
+
+        if not api_key:
+            st.error("⚠️ **Materials Project API Key Required**")
+            st.markdown("""
+            Get your free API key at: https://next-gen.materialsproject.org/api
+            Add it to your `.env` file or environment variables.
+            """)
+            st.stop()
+
+        st.success("✅ Materials Project API Connected")
+
+        # Search options
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Search By:**")
+            search_mode = st.radio(
+                "Search type:",
+                ["Chemical System", "Elements", "Formula", "Properties"],
+                help="Choose how to search for materials"
+            )
+
+            if search_mode == "Chemical System":
+                search_query = st.text_input(
+                    "Chemical system:",
+                    value="Fe-Ni",
+                    help="e.g., Fe-Ni, Ti-Al, Fe-Ni-Cr"
+                )
+            elif search_mode == "Elements":
+                search_query = st.text_input(
+                    "Elements (comma-separated):",
+                    value="Fe,Ni",
+                    help="e.g., Fe,Ni or Ti,Al,V"
+                )
+            elif search_mode == "Formula":
+                search_query = st.text_input(
+                    "Chemical formula:",
+                    value="",
+                    help="e.g., Fe2O3, TiO2"
+                )
+            else:  # Properties
+                search_query = None
+                st.info("Property-based search - use filters below")
+
+        with col2:
+            st.markdown("**Filters:**")
+            filter_metallic = st.checkbox("Metallic only (band gap = 0)", value=False)
+            filter_stable = st.checkbox("Stable materials only (on convex hull)", value=False)
+
+            property_filter = st.selectbox(
+                "Must have property:",
+                ["Any", "Formation Energy", "Band Gap", "Bulk Modulus", "Shear Modulus", "Density"],
+                help="Only show materials with this property available"
+            )
+
+            max_results = st.slider("Max results to show:", 10, 500, 100, 10)
+
+        if st.button("🔍 Search Materials Project", type="primary", use_container_width=True):
+            try:
+                from mp_api.client import MPRester
+
+                with st.spinner("Searching Materials Project..."):
+                    with MPRester(api_key) as mpr:
+                        # Build search criteria
+                        search_criteria = {}
+
+                        if search_mode == "Chemical System" and search_query:
+                            search_criteria["chemsys"] = search_query
+                        elif search_mode == "Elements" and search_query:
+                            elements = [e.strip() for e in search_query.split(",")]
+                            search_criteria["elements"] = elements
+                        elif search_mode == "Formula" and search_query:
+                            search_criteria["formula"] = search_query
+
+                        # Apply filters
+                        if filter_metallic:
+                            search_criteria["band_gap"] = (0, 0.001)  # Nearly zero
+
+                        if filter_stable:
+                            search_criteria["is_stable"] = True
+
+                        # Fetch summary data
+                        docs = mpr.materials.summary.search(
+                            **search_criteria,
+                            fields=[
+                                "material_id",
+                                "formula_pretty",
+                                "formation_energy_per_atom",
+                                "energy_above_hull",
+                                "band_gap",
+                                "density",
+                                "volume",
+                                "nsites",
+                                "is_stable"
+                            ],
+                            num_chunks=1,
+                            chunk_size=max_results
+                        )
+
+                if not docs:
+                    st.warning("No materials found matching these criteria.")
+                    st.stop()
+
+                st.success(f"✅ Found {len(docs)} materials")
+
+                # Convert to DataFrame
+                results_data = []
+                for doc in docs:
+                    results_data.append({
+                        "Material ID": doc.material_id,
+                        "Formula": doc.formula_pretty,
+                        "Formation Energy (eV/atom)": doc.formation_energy_per_atom if doc.formation_energy_per_atom else None,
+                        "Energy Above Hull (eV/atom)": doc.energy_above_hull if doc.energy_above_hull else None,
+                        "Band Gap (eV)": doc.band_gap if doc.band_gap else None,
+                        "Density (g/cm³)": doc.density if doc.density else None,
+                        "# Atoms": doc.nsites,
+                        "Stable": "✓" if doc.is_stable else "✗"
+                    })
+
+                df_results = pd.DataFrame(results_data)
+
+                # Display summary statistics
+                st.markdown("### 📊 Search Results Summary")
+
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Materials", len(df_results))
+                with col2:
+                    stable_count = df_results["Stable"].str.contains("✓").sum()
+                    st.metric("Stable", stable_count)
+                with col3:
+                    avg_atoms = df_results["# Atoms"].mean()
+                    st.metric("Avg Atoms", f"{avg_atoms:.1f}")
+                with col4:
+                    unique_formulas = df_results["Formula"].nunique()
+                    st.metric("Unique Formulas", unique_formulas)
+
+                # Property availability
+                st.markdown("**Property Availability:**")
+                prop_col1, prop_col2, prop_col3 = st.columns(3)
+
+                with prop_col1:
+                    fe_count = df_results["Formation Energy (eV/atom)"].notna().sum()
+                    st.metric("Formation Energy", f"{fe_count}/{len(df_results)}")
+                with prop_col2:
+                    bg_count = df_results["Band Gap (eV)"].notna().sum()
+                    st.metric("Band Gap", f"{bg_count}/{len(df_results)}")
+                with prop_col3:
+                    dens_count = df_results["Density (g/cm³)"].notna().sum()
+                    st.metric("Density", f"{dens_count}/{len(df_results)}")
+
+                # Display results table
+                st.markdown("### 📋 Materials List")
+                st.dataframe(
+                    df_results,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=400
+                )
+
+                # Download option
+                csv = df_results.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Results as CSV",
+                    data=csv,
+                    file_name=f"materials_project_search_{search_mode.lower().replace(' ', '_')}.csv",
+                    mime="text/csv"
+                )
+
+                # Visualizations
+                st.markdown("### 📈 Property Distributions")
+
+                viz_col1, viz_col2 = st.columns(2)
+
+                with viz_col1:
+                    # Formation energy distribution
+                    if df_results["Formation Energy (eV/atom)"].notna().any():
+                        fig_fe = px.histogram(
+                            df_results,
+                            x="Formation Energy (eV/atom)",
+                            nbins=30,
+                            title="Formation Energy Distribution"
+                        )
+                        st.plotly_chart(fig_fe, use_container_width=True)
+
+                with viz_col2:
+                    # Band gap distribution
+                    if df_results["Band Gap (eV)"].notna().any():
+                        fig_bg = px.histogram(
+                            df_results,
+                            x="Band Gap (eV)",
+                            nbins=30,
+                            title="Band Gap Distribution"
+                        )
+                        st.plotly_chart(fig_bg, use_container_width=True)
+
+                # Helpful tip
+                st.info("""
+                💡 **Next Step:** Use these search results to inform your data collection in the
+                **Data Collection** tab. You can now collect materials matching these criteria!
+                """)
+
+            except Exception as e:
+                st.error(f"❌ Search failed: {e}")
+                st.exception(e)
 
     with tab1:
         st.subheader("📥 Collect Training Data from Materials Project")
