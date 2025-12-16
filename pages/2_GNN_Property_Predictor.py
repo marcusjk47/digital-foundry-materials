@@ -866,6 +866,7 @@ if model_mode == "🎓 Train Model":
                         st.info("🚀 **Auto-Train Mode**: Proceeding to training automatically...")
 
                     # Auto-select best hyperparameters based on dataset size
+                    dataset_size = len(graphs)
                     if dataset_size < 200:
                         auto_batch_size = 16
                         auto_epochs = 50
