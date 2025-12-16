@@ -545,6 +545,108 @@ if model_mode == "🎓 Train Model":
 
         st.success("✅ Materials Project API Connected")
 
+        # Training Templates
+        st.markdown("### 📋 Quick Start Templates")
+
+        templates = {
+            "Custom (Manual Configuration)": {
+                "description": "Configure all settings manually",
+                "chemsys": "Fe-Ni",
+                "max_materials": 500,
+                "metallic": True,
+                "stable": False,
+                "properties": ['formation_energy_per_atom', 'band_gap', 'density'],
+                "calphad": False,
+                "dataset_name": "my_dataset"
+            },
+            "🔩 Steel Alloys (Fe-Ni-Cr)": {
+                "description": "Iron-based structural alloys - metallic, formation energy focused",
+                "chemsys": "Fe-Ni-Cr",
+                "max_materials": 800,
+                "metallic": True,
+                "stable": False,
+                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull'],
+                "calphad": True,
+                "dataset_name": "steel_alloys"
+            },
+            "✈️ Aerospace Materials (Ti-Al)": {
+                "description": "Titanium-aluminum alloys - lightweight, high strength",
+                "chemsys": "Ti-Al",
+                "max_materials": 600,
+                "metallic": True,
+                "stable": True,
+                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull'],
+                "calphad": True,
+                "dataset_name": "ti_al_aerospace"
+            },
+            "🔋 Battery Materials (Li-Co-O)": {
+                "description": "Lithium battery cathodes - stable oxides, band gap important",
+                "chemsys": "Li-Co-O",
+                "max_materials": 500,
+                "metallic": False,
+                "stable": True,
+                "properties": ['formation_energy_per_atom', 'band_gap', 'energy_above_hull', 'density'],
+                "calphad": False,
+                "dataset_name": "li_battery_materials"
+            },
+            "💎 Semiconductors (Si-Ge)": {
+                "description": "Silicon-germanium semiconductors - band gap prediction focus",
+                "chemsys": "Si-Ge",
+                "max_materials": 400,
+                "metallic": False,
+                "stable": True,
+                "properties": ['band_gap', 'formation_energy_per_atom', 'density'],
+                "calphad": False,
+                "dataset_name": "si_ge_semiconductors"
+            },
+            "🏗️ Structural Alloys (Al-Mg-Zn)": {
+                "description": "Aluminum structural alloys - lightweight construction",
+                "chemsys": "Al-Mg-Zn",
+                "max_materials": 600,
+                "metallic": True,
+                "stable": False,
+                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull'],
+                "calphad": True,
+                "dataset_name": "al_structural"
+            },
+            "🌡️ High-Temperature Alloys (Ni-Cr-Mo)": {
+                "description": "Nickel superalloys - high temperature applications",
+                "chemsys": "Ni-Cr-Mo",
+                "max_materials": 700,
+                "metallic": True,
+                "stable": False,
+                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull'],
+                "calphad": True,
+                "dataset_name": "ni_superalloys"
+            }
+        }
+
+        template_choice = st.selectbox(
+            "Select template:",
+            list(templates.keys()),
+            help="Choose a pre-configured material system or customize manually"
+        )
+
+        template = templates[template_choice]
+
+        if template_choice != "Custom (Manual Configuration)":
+            st.info(f"📝 **{template_choice}**: {template['description']}")
+
+        # Workflow mode
+        st.markdown("---")
+        st.markdown("### ⚡ Workflow Options")
+
+        workflow_mode = st.radio(
+            "Training workflow:",
+            ["Manual (Step-by-step)", "🚀 Collect & Train (Automatic)", "🎯 Full Pipeline (Collect → Train → Evaluate)"],
+            help="Choose workflow automation level"
+        )
+
+        if workflow_mode != "Manual (Step-by-step)":
+            st.info(f"✨ **{workflow_mode}**: After data collection completes, training will start automatically with optimized settings.")
+
+        st.markdown("---")
+
         col1, col2 = st.columns(2)
 
         with col1:
@@ -559,7 +661,7 @@ if model_mode == "🎓 Train Model":
             if data_mode == "Chemical System":
                 chemsys = st.text_input(
                     "Chemical system:",
-                    value="Fe-Ni",
+                    value=template["chemsys"],
                     help="e.g., Fe-Ni, Fe-Ni-Cr, Ti-Al"
                 )
                 elements = None
@@ -579,7 +681,7 @@ if model_mode == "🎓 Train Model":
                 "Max materials to collect:",
                 min_value=10,
                 max_value=10000,
-                value=500,
+                value=template["max_materials"],
                 step=50,
                 help="More materials = better model, but longer download"
             )
@@ -587,8 +689,8 @@ if model_mode == "🎓 Train Model":
         with col2:
             st.markdown("**Filtering Options**")
 
-            metallic_only = st.checkbox("Metallic only (band gap = 0)", value=True)
-            stable_only = st.checkbox("Stable materials only", value=False)
+            metallic_only = st.checkbox("Metallic only (band gap = 0)", value=template["metallic"])
+            stable_only = st.checkbox("Stable materials only", value=template["stable"])
 
             st.markdown("**Target Properties**")
 
@@ -616,7 +718,7 @@ if model_mode == "🎓 Train Model":
                 target_properties = st.multiselect(
                     "Select properties to predict:",
                     list(available_properties.keys()),
-                    default=['formation_energy_per_atom', 'band_gap', 'density'],
+                    default=template["properties"],
                     format_func=lambda x: available_properties[x],
                     help="Model will predict all selected properties simultaneously"
                 )
@@ -630,7 +732,7 @@ if model_mode == "🎓 Train Model":
 
             use_calphad = st.checkbox(
                 "Enable CALPHAD features",
-                value=False,
+                value=template["calphad"],
                 help="Enhance graphs with thermodynamic features (melting point, heat capacity, mixing energy)"
             )
 
@@ -641,13 +743,20 @@ if model_mode == "🎓 Train Model":
 
             dataset_name = st.text_input(
                 "Dataset name:",
-                value="my_dataset",
+                value=template["dataset_name"],
                 help="Name for saving the dataset"
             )
 
         st.markdown("---")
 
-        if st.button("🚀 Collect Data", type="primary", use_container_width=True):
+        # Update button text based on workflow mode
+        button_text = "🚀 Collect Data"
+        if workflow_mode == "🚀 Collect & Train (Automatic)":
+            button_text = "🚀 Collect Data & Start Training"
+        elif workflow_mode == "🎯 Full Pipeline (Collect → Train → Evaluate)":
+            button_text = "🎯 Run Full Pipeline"
+
+        if st.button(button_text, type="primary", use_container_width=True):
             try:
                 from gnn_data_collection import fetch_materials_data, convert_to_graphs, get_dataset_statistics, print_dataset_info
 
@@ -746,10 +855,173 @@ if model_mode == "🎓 Train Model":
                 sample_df = df[sample_cols].head(10)
                 st.dataframe(sample_df, use_container_width=True)
 
-                if len(target_properties) > 1:
-                    st.info(f"💡 **Next Step:** Train a multi-task model to predict all {len(target_properties)} properties!")
+                # Automatic workflow handling
+                if workflow_mode != "Manual (Step-by-step)":
+                    st.markdown("---")
+                    st.markdown("### ⚡ Automatic Training Started")
+
+                    if workflow_mode == "🎯 Full Pipeline (Collect → Train → Evaluate)":
+                        st.info("📊 **Full Pipeline Mode**: Proceeding to training and evaluation automatically...")
+                    else:
+                        st.info("🚀 **Auto-Train Mode**: Proceeding to training automatically...")
+
+                    # Auto-select best hyperparameters based on dataset size
+                    if dataset_size < 200:
+                        auto_batch_size = 16
+                        auto_epochs = 50
+                    elif dataset_size < 500:
+                        auto_batch_size = 32
+                        auto_epochs = 100
+                    else:
+                        auto_batch_size = 32
+                        auto_epochs = 150
+
+                    st.info(f"🤖 **Auto-configured settings**: Batch size={auto_batch_size}, Epochs={auto_epochs}")
+
+                    try:
+                        from gnn_train import GNNTrainer
+                        from gnn_dataset import CrystalGraphDataset, split_dataset, create_data_loaders
+                        import time
+
+                        with st.spinner("🔄 Loading dataset for training..."):
+                            # Load the dataset we just created
+                            if len(target_properties) > 1:
+                                from gnn_data_collection_multitask import load_multitask_dataset
+                                loaded_graphs = load_multitask_dataset(f"datasets/{dataset_name}_multitask.pkl")
+                            else:
+                                from gnn_data_collection import load_graph_dataset
+                                loaded_graphs = load_graph_dataset(f"datasets/{dataset_name}.pkl")
+
+                            dataset = CrystalGraphDataset(loaded_graphs)
+
+                        # Split dataset
+                        train_dataset, val_dataset, test_dataset = split_dataset(
+                            dataset,
+                            train_ratio=0.8,
+                            val_ratio=0.1,
+                            test_ratio=0.1
+                        )
+
+                        # Create data loaders
+                        train_loader, val_loader, test_loader = create_data_loaders(
+                            train_dataset, val_dataset, test_dataset,
+                            batch_size=auto_batch_size
+                        )
+
+                        # Detect if multi-task
+                        sample_batch = next(iter(train_loader))
+                        is_multitask = False
+                        if hasattr(sample_batch, 'y') and len(sample_batch.y.shape) > 0:
+                            if len(sample_batch.y.shape) == 2 and sample_batch.y.shape[1] > 1:
+                                is_multitask = True
+
+                        # Create model
+                        if is_multitask and len(target_properties) > 1:
+                            from gnn_model_multitask import CGCNN_MultiTask_CALPHAD, CGCNN_MultiTask
+                            from gnn_train_multitask import MultiTaskGNNTrainer
+
+                            if use_calphad:
+                                model = CGCNN_MultiTask_CALPHAD(
+                                    input_node_dim=13,
+                                    input_edge_dim=2,
+                                    properties=target_properties
+                                )
+                            else:
+                                model = CGCNN_MultiTask(properties=target_properties)
+
+                            trainer = MultiTaskGNNTrainer(
+                                model=model,
+                                properties=target_properties,
+                                device="cpu",
+                                learning_rate=0.001,
+                                checkpoint_dir="checkpoints"
+                            )
+                        else:
+                            if use_calphad:
+                                model = CGCNN_CALPHAD_Regressor(
+                                    input_node_dim=13,
+                                    input_edge_dim=2
+                                )
+                            else:
+                                model = CGCNN()
+
+                            trainer = GNNTrainer(
+                                model=model,
+                                device="cpu",
+                                learning_rate=0.001,
+                                checkpoint_dir="checkpoints"
+                            )
+
+                        st.success(f"✅ Model created with {count_parameters(model):,} parameters")
+
+                        # Train
+                        st.markdown("### 📊 Training Progress")
+
+                        start_time = time.time()
+
+                        with st.spinner("🎓 Training model... This may take several minutes."):
+                            history = trainer.train(
+                                train_loader=train_loader,
+                                val_loader=val_loader,
+                                epochs=auto_epochs,
+                                patience=20,
+                                verbose=False
+                            )
+
+                        training_time = time.time() - start_time
+
+                        st.success(f"✅ Training completed in {training_time/60:.1f} minutes!")
+
+                        # Show results
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Best Epoch", trainer.best_epoch)
+                        with col2:
+                            st.metric("Best Val Loss", f"{trainer.best_val_loss:.6f}")
+                        with col3:
+                            st.metric("Training Time", f"{training_time/60:.1f} min")
+
+                        # Plot training history
+                        fig = trainer.plot_training_history()
+                        st.pyplot(fig)
+
+                        if is_multitask:
+                            st.success("✅ Multi-task model trained and saved to `checkpoints/best_model_multitask.pt`")
+                        else:
+                            st.success("✅ Model trained and saved to `checkpoints/best_model.pt`")
+
+                        # Evaluate if full pipeline mode
+                        if workflow_mode == "🎯 Full Pipeline (Collect → Train → Evaluate)":
+                            st.markdown("---")
+                            st.markdown("### 🎯 Automatic Evaluation")
+
+                            with st.spinner("Evaluating on test set..."):
+                                metrics, predictions, targets = trainer.evaluate(test_loader)
+
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Test MAE", f"{metrics['mae']:.6f}")
+                            with col2:
+                                st.metric("Test RMSE", f"{metrics['rmse']:.6f}")
+                            with col3:
+                                st.metric("R² Score", f"{metrics['r2']:.4f}")
+                            with col4:
+                                st.metric("Test Samples", metrics['num_samples'])
+
+                            st.success("✅ **Pipeline Complete!** Your model is ready for predictions.")
+                            st.info("💡 **Next Step:** Go to 'Prediction' mode to use your trained model!")
+
+                    except Exception as train_error:
+                        st.error(f"❌ Auto-training failed: {train_error}")
+                        st.exception(train_error)
+                        st.info("💡 You can still train manually in the 'Training' tab.")
+
                 else:
-                    st.info(f"💡 **Next Step:** Go to the 'Training' tab to train a model on this dataset!")
+                    # Manual mode - show next step message
+                    if len(target_properties) > 1:
+                        st.info(f"💡 **Next Step:** Train a multi-task model to predict all {len(target_properties)} properties!")
+                    else:
+                        st.info(f"💡 **Next Step:** Go to the 'Training' tab to train a model on this dataset!")
 
             except Exception as e:
                 st.error(f"❌ Error collecting data: {e}")
