@@ -33,29 +33,36 @@ class GNNTrainer:
         model: nn.Module,
         device: str = "cpu",
         learning_rate: float = 0.001,
-        weight_decay: float = 0.0,
-        checkpoint_dir: str = "checkpoints"
+        weight_decay: float = 0.01,
+        checkpoint_dir: str = "checkpoints",
+        max_grad_norm: float = 1.0
     ):
         """
         Args:
             model: CGCNN model to train
             device: Device to train on ('cpu' or 'cuda')
-            learning_rate: Learning rate for optimizer
-            weight_decay: L2 regularization strength
+            learning_rate: Initial learning rate for optimizer
+            weight_decay: Weight decay (L2 regularization) for AdamW
             checkpoint_dir: Directory to save model checkpoints
+            max_grad_norm: Maximum gradient norm for clipping (prevents exploding gradients)
         """
         self.model = model.to(device)
         self.device = device
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.max_grad_norm = max_grad_norm
 
-        # Optimizer and loss
-        self.optimizer = optim.Adam(
+        # Optimizer and loss (using AdamW for better generalization)
+        self.optimizer = optim.AdamW(
             model.parameters(),
             lr=learning_rate,
-            weight_decay=weight_decay
+            weight_decay=weight_decay,
+            betas=(0.9, 0.999)
         )
         self.criterion = nn.MSELoss()
+
+        # Learning rate scheduler (will be initialized in train())
+        self.scheduler = None
 
         # Training history
         self.history = {
@@ -68,6 +75,7 @@ class GNNTrainer:
 
         self.best_val_loss = float("inf")
         self.best_epoch = 0
+        self.patience_counter = 0
 
     def train_epoch(self, train_loader: DataLoader) -> Tuple[float, float]:
         """
@@ -100,6 +108,11 @@ class GNNTrainer:
 
             # Backward pass
             loss.backward()
+
+            # Gradient clipping (prevents exploding gradients)
+            if self.max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+
             self.optimizer.step()
 
             # Track metrics
@@ -158,10 +171,11 @@ class GNNTrainer:
         val_loader: DataLoader,
         epochs: int = 100,
         patience: int = 20,
-        verbose: bool = True
+        verbose: bool = True,
+        use_scheduler: bool = True
     ) -> Dict:
         """
-        Full training loop with early stopping.
+        Full training loop with early stopping and learning rate scheduling.
 
         Args:
             train_loader: DataLoader for training
@@ -169,6 +183,7 @@ class GNNTrainer:
             epochs: Maximum number of epochs
             patience: Early stopping patience
             verbose: Print progress
+            use_scheduler: Use cosine annealing learning rate scheduler
 
         Returns:
             Training history dictionary
@@ -176,6 +191,15 @@ class GNNTrainer:
         print(f"\nStarting training on {self.device}")
         print(f"Epochs: {epochs}, Patience: {patience}")
         print("="*60)
+
+        # Initialize learning rate scheduler (cosine annealing)
+        if use_scheduler:
+            self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=epochs,
+                eta_min=1e-6
+            )
+            print("✓ Using Cosine Annealing LR Scheduler")
 
         patience_counter = 0
 
@@ -197,11 +221,17 @@ class GNNTrainer:
 
             # Print progress
             if verbose:
+                current_lr = self.optimizer.param_groups[0]["lr"]
                 print(f"Epoch {epoch:3d}/{epochs} | "
                       f"Train Loss: {train_loss:.4f} | "
                       f"Val Loss: {val_loss:.4f} | "
                       f"Train MAE: {train_mae:.4f} | "
-                      f"Val MAE: {val_mae:.4f}")
+                      f"Val MAE: {val_mae:.4f} | "
+                      f"LR: {current_lr:.2e}")
+
+            # Update learning rate
+            if use_scheduler and self.scheduler is not None:
+                self.scheduler.step()
 
             # Save best model
             if val_loss < self.best_val_loss:

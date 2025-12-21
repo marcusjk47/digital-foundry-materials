@@ -76,32 +76,46 @@ class MultiTaskGNNTrainer:
         properties: List[str],
         device: str = 'cpu',
         learning_rate: float = 0.001,
-        checkpoint_dir: str = 'checkpoints'
+        weight_decay: float = 0.01,
+        checkpoint_dir: str = 'checkpoints',
+        max_grad_norm: float = 1.0
     ):
         """
         Args:
             model: Multi-task GNN model
             properties: List of property names being predicted
             device: 'cpu' or 'cuda'
-            learning_rate: Learning rate
+            learning_rate: Initial learning rate
+            weight_decay: Weight decay for AdamW optimizer
             checkpoint_dir: Directory to save checkpoints
+            max_grad_norm: Maximum gradient norm for clipping
         """
         self.model = model.to(device)
         self.properties = properties
         self.device = device
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(exist_ok=True)
+        self.max_grad_norm = max_grad_norm
 
-        # Optimizer
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        # Optimizer (AdamW for better generalization)
+        self.optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay,
+            betas=(0.9, 0.999)
+        )
 
         # Multi-task loss
         self.criterion = MultiTaskLoss(len(properties))
+
+        # Learning rate scheduler
+        self.scheduler = None
 
         # Training history
         self.history = {
             'train_loss': [],
             'val_loss': [],
+            'learning_rate': [],
             **{f'train_{prop}': [] for prop in properties},
             **{f'val_{prop}': [] for prop in properties}
         }
@@ -129,6 +143,11 @@ class MultiTaskGNNTrainer:
             # Backward pass
             self.optimizer.zero_grad()
             loss.backward()
+
+            # Gradient clipping
+            if self.max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+
             self.optimizer.step()
 
             # Track losses
@@ -185,10 +204,11 @@ class MultiTaskGNNTrainer:
         val_loader: DataLoader,
         epochs: int = 100,
         patience: int = 20,
-        verbose: bool = True
+        verbose: bool = True,
+        use_scheduler: bool = True
     ) -> Dict:
         """
-        Train the model.
+        Train the model with learning rate scheduling.
 
         Args:
             train_loader: Training data loader
@@ -196,10 +216,21 @@ class MultiTaskGNNTrainer:
             epochs: Number of epochs
             patience: Early stopping patience
             verbose: Print progress
+            use_scheduler: Use cosine annealing LR scheduler
 
         Returns:
             Training history dictionary
         """
+        # Initialize learning rate scheduler
+        if use_scheduler:
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=epochs,
+                eta_min=1e-6
+            )
+            if verbose:
+                print("✓ Using Cosine Annealing LR Scheduler")
+
         patience_counter = 0
 
         for epoch in range(epochs):
@@ -212,6 +243,7 @@ class MultiTaskGNNTrainer:
             # Record history
             self.history['train_loss'].append(train_loss)
             self.history['val_loss'].append(val_loss)
+            self.history['learning_rate'].append(self.optimizer.param_groups[0]['lr'])
 
             for prop in self.properties:
                 self.history[f'train_{prop}'].append(train_prop_losses.get(prop, 0))
@@ -219,7 +251,8 @@ class MultiTaskGNNTrainer:
 
             # Print progress
             if verbose:
-                print(f"\nEpoch {epoch+1}/{epochs}")
+                current_lr = self.optimizer.param_groups[0]['lr']
+                print(f"\nEpoch {epoch+1}/{epochs} | LR: {current_lr:.2e}")
                 print(f"  Train Loss: {train_loss:.6f}")
                 print(f"  Val Loss:   {val_loss:.6f}")
 
@@ -227,6 +260,10 @@ class MultiTaskGNNTrainer:
                     train_prop = train_prop_losses.get(prop, 0)
                     val_prop = val_prop_losses.get(prop, 0)
                     print(f"    {prop}: train={train_prop:.6f}, val={val_prop:.6f}")
+
+            # Update learning rate
+            if use_scheduler and self.scheduler is not None:
+                self.scheduler.step()
 
             # Save best model
             if val_loss < self.best_val_loss:
