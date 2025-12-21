@@ -70,7 +70,13 @@ def fetch_materials_data(
                 "symmetry",
                 "density",
                 "volume",
-                "nsites"
+                "nsites",
+                "bulk_modulus",
+                "shear_modulus",
+                "total_magnetization",
+                "efermi",
+                "uncorrected_energy_per_atom",
+                "equilibrium_reaction_energy_per_atom"
             ]
         }
 
@@ -112,6 +118,39 @@ def fetch_materials_data(
                     "volume": doc.volume,
                     "nsites": doc.nsites
                 }
+
+                # Add elastic properties (may be None)
+                if hasattr(doc, "bulk_modulus") and doc.bulk_modulus:
+                    mat_data["bulk_modulus"] = doc.bulk_modulus.vrh
+                else:
+                    mat_data["bulk_modulus"] = None
+
+                if hasattr(doc, "shear_modulus") and doc.shear_modulus:
+                    mat_data["shear_modulus"] = doc.shear_modulus.vrh
+                else:
+                    mat_data["shear_modulus"] = None
+
+                # Add magnetic properties
+                if hasattr(doc, "total_magnetization"):
+                    mat_data["total_magnetization"] = doc.total_magnetization
+                else:
+                    mat_data["total_magnetization"] = None
+
+                # Add electronic properties
+                if hasattr(doc, "efermi"):
+                    mat_data["efermi"] = doc.efermi
+                else:
+                    mat_data["efermi"] = None
+
+                if hasattr(doc, "uncorrected_energy_per_atom"):
+                    mat_data["uncorrected_energy_per_atom"] = doc.uncorrected_energy_per_atom
+                else:
+                    mat_data["uncorrected_energy_per_atom"] = None
+
+                if hasattr(doc, "equilibrium_reaction_energy_per_atom"):
+                    mat_data["equilibrium_reaction_energy_per_atom"] = doc.equilibrium_reaction_energy_per_atom
+                else:
+                    mat_data["equilibrium_reaction_energy_per_atom"] = None
 
                 # Add space group if available
                 if hasattr(doc, "symmetry") and doc.symmetry:

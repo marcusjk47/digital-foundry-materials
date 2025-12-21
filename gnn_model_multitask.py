@@ -319,6 +319,13 @@ PROPERTY_INFO = {
         'description': 'Total magnetic moment',
         'typical_range': (0.0, 10.0),
         'lower_is_better': False
+    },
+    'efermi': {
+        'name': 'Fermi Energy',
+        'unit': 'eV',
+        'description': 'Fermi level energy',
+        'typical_range': (-10.0, 10.0),
+        'lower_is_better': False
     }
 }
 

@@ -405,7 +405,10 @@ if model_mode == "🎓 Train Model":
                                 "density",
                                 "volume",
                                 "nsites",
-                                "is_stable"
+                                "is_stable",
+                                "bulk_modulus",
+                                "shear_modulus",
+                                "total_magnetization"
                             ],
                             num_chunks=1,
                             chunk_size=max_results
@@ -420,7 +423,7 @@ if model_mode == "🎓 Train Model":
                 # Convert to DataFrame
                 results_data = []
                 for doc in docs:
-                    results_data.append({
+                    row_data = {
                         "Material ID": doc.material_id,
                         "Formula": doc.formula_pretty,
                         "Formation Energy (eV/atom)": doc.formation_energy_per_atom if doc.formation_energy_per_atom else None,
@@ -429,7 +432,26 @@ if model_mode == "🎓 Train Model":
                         "Density (g/cm³)": doc.density if doc.density else None,
                         "# Atoms": doc.nsites,
                         "Stable": "✓" if doc.is_stable else "✗"
-                    })
+                    }
+
+                    # Add elastic properties if available
+                    if hasattr(doc, 'bulk_modulus') and doc.bulk_modulus:
+                        row_data["Bulk Modulus (GPa)"] = doc.bulk_modulus.vrh
+                    else:
+                        row_data["Bulk Modulus (GPa)"] = None
+
+                    if hasattr(doc, 'shear_modulus') and doc.shear_modulus:
+                        row_data["Shear Modulus (GPa)"] = doc.shear_modulus.vrh
+                    else:
+                        row_data["Shear Modulus (GPa)"] = None
+
+                    # Add magnetic properties
+                    if hasattr(doc, 'total_magnetization'):
+                        row_data["Magnetization (μB)"] = doc.total_magnetization
+                    else:
+                        row_data["Magnetization (μB)"] = None
+
+                    results_data.append(row_data)
 
                 df_results = pd.DataFrame(results_data)
 
@@ -565,7 +587,7 @@ if model_mode == "🎓 Train Model":
                 "max_materials": 800,
                 "metallic": True,
                 "stable": False,
-                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull'],
+                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull', 'bulk_modulus', 'shear_modulus', 'total_magnetization'],
                 "calphad": True,
                 "dataset_name": "steel_alloys"
             },
@@ -575,7 +597,7 @@ if model_mode == "🎓 Train Model":
                 "max_materials": 600,
                 "metallic": True,
                 "stable": True,
-                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull'],
+                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull', 'bulk_modulus', 'shear_modulus'],
                 "calphad": True,
                 "dataset_name": "ti_al_aerospace"
             },
@@ -585,7 +607,7 @@ if model_mode == "🎓 Train Model":
                 "max_materials": 500,
                 "metallic": False,
                 "stable": True,
-                "properties": ['formation_energy_per_atom', 'band_gap', 'energy_above_hull', 'density'],
+                "properties": ['formation_energy_per_atom', 'band_gap', 'energy_above_hull', 'density', 'volume'],
                 "calphad": False,
                 "dataset_name": "li_battery_materials"
             },
@@ -595,7 +617,7 @@ if model_mode == "🎓 Train Model":
                 "max_materials": 400,
                 "metallic": False,
                 "stable": True,
-                "properties": ['band_gap', 'formation_energy_per_atom', 'density'],
+                "properties": ['band_gap', 'formation_energy_per_atom', 'density', 'efermi', 'bulk_modulus'],
                 "calphad": False,
                 "dataset_name": "si_ge_semiconductors"
             },
@@ -605,7 +627,7 @@ if model_mode == "🎓 Train Model":
                 "max_materials": 600,
                 "metallic": True,
                 "stable": False,
-                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull'],
+                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull', 'bulk_modulus', 'shear_modulus'],
                 "calphad": True,
                 "dataset_name": "al_structural"
             },
@@ -615,7 +637,7 @@ if model_mode == "🎓 Train Model":
                 "max_materials": 700,
                 "metallic": True,
                 "stable": False,
-                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull'],
+                "properties": ['formation_energy_per_atom', 'density', 'energy_above_hull', 'bulk_modulus', 'shear_modulus', 'total_magnetization'],
                 "calphad": True,
                 "dataset_name": "ni_superalloys"
             }
@@ -713,6 +735,11 @@ if model_mode == "🎓 Train Model":
                     'energy_above_hull': 'Energy Above Hull (eV/atom)',
                     'band_gap': 'Band Gap (eV)',
                     'density': 'Density (g/cm³)',
+                    'volume': 'Volume (ų/atom)',
+                    'bulk_modulus': 'Bulk Modulus (GPa)',
+                    'shear_modulus': 'Shear Modulus (GPa)',
+                    'total_magnetization': 'Total Magnetization (μB)',
+                    'efermi': 'Fermi Energy (eV)',
                 }
 
                 target_properties = st.multiselect(

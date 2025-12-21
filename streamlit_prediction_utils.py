@@ -257,6 +257,17 @@ def display_predictions(predictions: Dict[str, float], formula: str, composition
                 else:
                     st.info("Non-magnetic or very weakly magnetic.")
 
+            elif 'efermi' in prop_name or 'fermi' in prop_name.lower():
+                st.info(f"⚡ **Fermi Energy:** {value:.2f} eV")
+                st.write("The Fermi energy indicates the electronic structure and conductivity characteristics.")
+
+            elif 'volume' in prop_name:
+                st.info(f"📦 **Atomic Volume:** {value:.2f} ų/atom")
+                if value < 15:
+                    st.write("Compact atomic packing - typical for dense materials.")
+                elif value > 30:
+                    st.write("Loose atomic packing - lower density structure.")
+
             # Show typical range if available
             if prop_info['typical_range'][0] is not None:
                 min_val, max_val = prop_info['typical_range']
