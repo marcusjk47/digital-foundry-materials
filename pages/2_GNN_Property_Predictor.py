@@ -2033,22 +2033,132 @@ elif model_mode == "🔮 Prediction":
         st.subheader("Create Structure from Composition")
 
         st.markdown("""
-        Create a simple crystal structure from Fe-Ni composition and predict its formation energy.
+        Create a crystal structure from a custom composition and predict its properties.
         """)
 
+        # Pre-configured material systems
+        material_systems = {
+            "Custom (Select Elements)": {
+                "elements": None,
+                "lattice": "FCC",
+                "description": "Choose your own elements"
+            },
+            "🔩 Steel (Fe-Ni-Cr)": {
+                "elements": ["Fe", "Ni", "Cr"],
+                "lattice": "BCC",
+                "description": "Iron-based structural alloy"
+            },
+            "✈️ Aerospace (Ti-Al-V)": {
+                "elements": ["Ti", "Al", "V"],
+                "lattice": "HCP",
+                "description": "Titanium aerospace alloy"
+            },
+            "⚡ Battery (Li-Co-O)": {
+                "elements": ["Li", "Co", "O"],
+                "lattice": "FCC",
+                "description": "Lithium cobalt oxide cathode"
+            },
+            "💎 Semiconductor (Si-Ge)": {
+                "elements": ["Si", "Ge"],
+                "lattice": "FCC",
+                "description": "Silicon-germanium semiconductor"
+            },
+            "🏗️ Structural (Al-Mg-Zn)": {
+                "elements": ["Al", "Mg", "Zn"],
+                "lattice": "FCC",
+                "description": "Aluminum structural alloy"
+            },
+            "🔥 High-Temp (Ni-Cr-Mo)": {
+                "elements": ["Ni", "Cr", "Mo"],
+                "lattice": "FCC",
+                "description": "Nickel superalloy"
+            }
+        }
+
+        system_choice = st.selectbox(
+            "Material System:",
+            list(material_systems.keys()),
+            help="Choose a pre-configured system or select custom elements"
+        )
+
+        system_config = material_systems[system_choice]
+        st.caption(system_config["description"])
+
+        # Element selection
+        if system_config["elements"] is None:
+            # Custom element selection
+            st.markdown("**Select Elements:**")
+
+            # Common elements for alloys
+            common_elements = ["Fe", "Ni", "Cr", "Ti", "Al", "Cu", "Mg", "Zn", "Co", "Mn",
+                             "Si", "V", "Mo", "W", "Nb", "Ta", "Li", "O", "C", "N"]
+
+            col1, col2 = st.columns(2)
+            with col1:
+                num_elements = st.radio("Number of Elements:", [2, 3], index=0)
+
+            with col2:
+                st.caption("Binary or ternary alloy")
+
+            if num_elements == 2:
+                col1, col2 = st.columns(2)
+                with col1:
+                    element1 = st.selectbox("Element 1:", common_elements, index=0)
+                with col2:
+                    element2 = st.selectbox("Element 2:", common_elements, index=1)
+                elements = [element1, element2]
+            else:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    element1 = st.selectbox("Element 1:", common_elements, index=0)
+                with col2:
+                    element2 = st.selectbox("Element 2:", common_elements, index=1)
+                with col3:
+                    element3 = st.selectbox("Element 3:", common_elements, index=2)
+                elements = [element1, element2, element3]
+        else:
+            elements = system_config["elements"]
+            st.info(f"🧪 Elements: {' - '.join(elements)}")
+
+        # Composition sliders
+        st.markdown("**Composition:**")
+
+        if len(elements) == 2:
+            col1, col2 = st.columns(2)
+            with col1:
+                comp1 = st.slider(f"{elements[0]} Content (%)", 0, 100, 50, 5)
+            comp2 = 100 - comp1
+            with col2:
+                st.metric(f"{elements[1]} Content (%)", comp2)
+            compositions = [comp1, comp2]
+            comp_formula = f"{elements[0]}{comp1}{elements[1]}{comp2}"
+        else:  # 3 elements
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                comp1 = st.slider(f"{elements[0]} (%)", 0, 100, 33, 5)
+            with col2:
+                max_comp2 = 100 - comp1
+                comp2 = st.slider(f"{elements[1]} (%)", 0, max_comp2, min(33, max_comp2), 5)
+            comp3 = 100 - comp1 - comp2
+            with col3:
+                st.metric(f"{elements[2]} (%)", comp3)
+            compositions = [comp1, comp2, comp3]
+            comp_formula = f"{elements[0]}{comp1}{elements[1]}{comp2}{elements[2]}{comp3}"
+
+        st.markdown(f"**Formula:** {comp_formula}")
+
+        # Lattice settings
         col1, col2 = st.columns(2)
-
         with col1:
-            fe_percent = st.slider("Fe Content (%)", 0, 100, 50, 5)
-            ni_percent = 100 - fe_percent
-            st.metric("Ni Content (%)", ni_percent)
-
+            if system_config["elements"] is None:
+                lattice_type = st.selectbox("Crystal Structure", ["FCC", "BCC", "HCP"])
+            else:
+                default_lattice = system_config["lattice"]
+                lattice_type = st.selectbox("Crystal Structure", ["FCC", "BCC", "HCP"],
+                                           index=["FCC", "BCC", "HCP"].index(default_lattice))
         with col2:
-            lattice_type = st.selectbox("Crystal Structure", ["FCC", "BCC"])
             supercell_size = st.selectbox("Supercell Size", [1, 2, 3], index=1,
                                          help="Larger = more realistic but slower")
-
-        st.markdown(f"**Composition:** Fe{fe_percent}Ni{ni_percent}")
 
         if st.button("🚀 Predict Properties", type="primary", use_container_width=True):
             try:
@@ -2056,8 +2166,9 @@ elif model_mode == "🔮 Prediction":
                 from streamlit_prediction_utils import load_model_and_predict, display_predictions
 
                 with st.spinner("Creating structure..."):
-                    # Create structure
-                    a = 3.6
+                    # Create structure with appropriate lattice
+                    a = 3.6  # Default lattice parameter
+
                     if lattice_type == "FCC":
                         lattice = Lattice.cubic(a)
                         base_positions = [
@@ -2066,11 +2177,18 @@ elif model_mode == "🔮 Prediction":
                             [0.5, 0.0, 0.5],
                             [0.0, 0.5, 0.5]
                         ]
-                    else:  # BCC
+                    elif lattice_type == "BCC":
                         lattice = Lattice.cubic(a)
                         base_positions = [
                             [0.0, 0.0, 0.0],
                             [0.5, 0.5, 0.5]
+                        ]
+                    else:  # HCP
+                        c_a_ratio = 1.633
+                        lattice = Lattice.hexagonal(a, a * c_a_ratio)
+                        base_positions = [
+                            [0.0, 0.0, 0.0],
+                            [1/3, 2/3, 0.5]
                         ]
 
                     # Create supercell
@@ -2086,15 +2204,24 @@ elif model_mode == "🔮 Prediction":
                                     ]
                                     positions.append(new_pos)
 
-                    # Assign elements
+                    # Assign elements based on composition
                     num_atoms = len(positions)
-                    num_fe = int(num_atoms * fe_percent / 100)
-                    elements = ['Fe'] * num_fe + ['Ni'] * (num_atoms - num_fe)
-                    np.random.shuffle(elements)
+                    element_list = []
+                    for elem, comp in zip(elements, compositions):
+                        count = int(num_atoms * comp / 100)
+                        element_list.extend([elem] * count)
+
+                    # Fill remaining atoms with last element (rounding)
+                    while len(element_list) < num_atoms:
+                        element_list.append(elements[-1])
+
+                    # Shuffle for random distribution
+                    np.random.shuffle(element_list)
+                    element_list = element_list[:num_atoms]  # Trim if over
 
                     # Create structure
                     supercell_lattice = Lattice(lattice.matrix * supercell_size)
-                    structure = Structure(supercell_lattice, elements, positions)
+                    structure = Structure(supercell_lattice, element_list, positions)
 
                 st.success(f"✅ Created {lattice_type} structure with {len(structure)} atoms")
 
@@ -2110,7 +2237,7 @@ elif model_mode == "🔮 Prediction":
                     )
 
                 # Display predictions using utility function
-                composition_info = f"Fe{fe_percent}Ni{ni_percent} ({lattice_type})"
+                composition_info = f"{comp_formula} ({lattice_type})"
                 display_predictions(
                     predictions,
                     formula=structure.composition.reduced_formula,
