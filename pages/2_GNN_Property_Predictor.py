@@ -1508,6 +1508,22 @@ if model_mode == "🎓 Train Model":
                     with col4:
                         st.metric("Test Samples", test_metrics['num_samples'])
 
+                    # Predictions vs Actual plot
+                    fig_pred = px.scatter(
+                        x=targets,
+                        y=predictions,
+                        labels={"x": "Actual", "y": "Predicted"},
+                        title="Predictions vs Actual (Test Set)"
+                    )
+                    fig_pred.add_trace(
+                        go.Scatter(x=[targets.min(), targets.max()],
+                                 y=[targets.min(), targets.max()],
+                                 mode="lines",
+                                 name="Perfect Prediction",
+                                 line=dict(dash="dash", color="red"))
+                    )
+                    st.plotly_chart(fig_pred, use_container_width=True)
+
                 # Save model metadata
                 metadata = create_training_metadata(
                     dataset_name=dataset_name_for_model,
@@ -1539,32 +1555,6 @@ if model_mode == "🎓 Train Model":
                     summary = model_manager.get_model_summary(unique_model_name)
                     if summary:
                         st.text(summary)
-
-                    # Predictions vs Actual plot
-                    fig_pred = px.scatter(
-                        x=targets,
-                        y=predictions,
-                        labels={"x": "Actual", "y": "Predicted"},
-                        title="Predictions vs Actual (Test Set)"
-                    )
-                    fig_pred.add_trace(
-                        go.Scatter(x=[targets.min(), targets.max()],
-                                 y=[targets.min(), targets.max()],
-                                 mode="lines",
-                                 name="Perfect Prediction",
-                                 line=dict(dash="dash", color="red"))
-                    )
-                    st.plotly_chart(fig_pred, use_container_width=True)
-                else:
-                    st.markdown("### 🎯 Multi-Property Training Complete")
-                    st.info(f"✅ Trained model to predict {len(target_properties)} properties simultaneously")
-                    st.info("📊 Training curves above show individual property losses over epochs")
-
-                # Success message with correct filename
-                if is_multitask:
-                    st.success("✅ Model trained and saved to `checkpoints/best_model_multitask.pt`")
-                else:
-                    st.success("✅ Model trained and saved to `checkpoints/best_model.pt`")
 
                 st.info("💡 **Next Step:** Use the trained model in 'Prediction' mode!")
 
