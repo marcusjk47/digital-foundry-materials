@@ -172,7 +172,8 @@ class GNNTrainer:
         epochs: int = 100,
         patience: int = 20,
         verbose: bool = True,
-        use_scheduler: bool = True
+        use_scheduler: bool = True,
+        model_name: str = "best_model.pt"
     ) -> Dict:
         """
         Full training loop with early stopping and learning rate scheduling.
@@ -184,6 +185,7 @@ class GNNTrainer:
             patience: Early stopping patience
             verbose: Print progress
             use_scheduler: Use cosine annealing learning rate scheduler
+            model_name: Name for the saved model checkpoint
 
         Returns:
             Training history dictionary
@@ -237,7 +239,7 @@ class GNNTrainer:
             if val_loss < self.best_val_loss:
                 self.best_val_loss = val_loss
                 self.best_epoch = epoch
-                self.save_checkpoint("best_model.pt", epoch, val_loss)
+                self.save_checkpoint(model_name, epoch, val_loss)
                 patience_counter = 0
                 if verbose:
                     print(f"  -> New best model! (Val Loss: {val_loss:.4f})")

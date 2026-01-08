@@ -205,7 +205,8 @@ class MultiTaskGNNTrainer:
         epochs: int = 100,
         patience: int = 20,
         verbose: bool = True,
-        use_scheduler: bool = True
+        use_scheduler: bool = True,
+        model_name: str = "best_model_multitask.pt"
     ) -> Dict:
         """
         Train the model with learning rate scheduling.
@@ -217,6 +218,7 @@ class MultiTaskGNNTrainer:
             patience: Early stopping patience
             verbose: Print progress
             use_scheduler: Use cosine annealing LR scheduler
+            model_name: Name for the saved model checkpoint
 
         Returns:
             Training history dictionary
@@ -269,7 +271,7 @@ class MultiTaskGNNTrainer:
             if val_loss < self.best_val_loss:
                 self.best_val_loss = val_loss
                 self.best_epoch = epoch
-                self.save_checkpoint('best_model_multitask.pt')
+                self.save_checkpoint(model_name)
                 patience_counter = 0
 
                 if verbose:

@@ -909,7 +909,11 @@ if model_mode == "🎓 Train Model":
                     try:
                         from gnn_train import GNNTrainer
                         from gnn_dataset import CrystalGraphDataset, split_dataset, create_data_loaders
+                        from model_manager import ModelManager, create_training_metadata
                         import time
+
+                        # Initialize model manager
+                        model_manager = ModelManager(checkpoint_dir="checkpoints")
 
                         with st.spinner("🔄 Loading dataset for training..."):
                             # Load the dataset we just created
@@ -982,6 +986,13 @@ if model_mode == "🎓 Train Model":
 
                         st.success(f"✅ Model created with {count_parameters(model):,} parameters")
 
+                        # Generate unique model name
+                        unique_model_name = model_manager.generate_model_name(
+                            dataset_name=dataset_name,
+                            properties=target_properties,
+                            use_calphad=use_calphad
+                        )
+
                         # Train
                         st.markdown("### 📊 Training Progress")
 
@@ -993,7 +1004,8 @@ if model_mode == "🎓 Train Model":
                                 val_loader=val_loader,
                                 epochs=auto_epochs,
                                 patience=20,
-                                verbose=False
+                                verbose=False,
+                                model_name=unique_model_name
                             )
 
                         training_time = time.time() - start_time
@@ -1013,28 +1025,56 @@ if model_mode == "🎓 Train Model":
                         fig = trainer.plot_training_history()
                         st.pyplot(fig)
 
-                        if is_multitask:
-                            st.success("✅ Multi-task model trained and saved to `checkpoints/best_model_multitask.pt`")
-                        else:
-                            st.success("✅ Model trained and saved to `checkpoints/best_model.pt`")
-
-                        # Evaluate if full pipeline mode
+                        # Evaluate and create metadata (even if not full pipeline)
+                        test_metrics = None
                         if workflow_mode == "🎯 Full Pipeline (Collect → Train → Evaluate)":
+                            with st.spinner("Evaluating on test set..."):
+                                test_metrics, _, _ = trainer.evaluate(test_loader)
+
+                        # Save model metadata
+                        metadata = create_training_metadata(
+                            dataset_name=dataset_name,
+                            properties=target_properties,
+                            num_samples=len(dataset),
+                            best_epoch=trainer.best_epoch,
+                            best_val_loss=trainer.best_val_loss,
+                            training_time_minutes=training_time / 60,
+                            use_calphad=use_calphad,
+                            chemical_system=chemsys if chemsys else None,
+                            test_metrics=test_metrics,
+                            hyperparameters={
+                                'batch_size': auto_batch_size,
+                                'epochs': auto_epochs,
+                                'learning_rate': 0.001,
+                                'patience': 20
+                            }
+                        )
+
+                        model_path = Path("checkpoints") / unique_model_name
+                        model_manager.save_model_with_metadata(model_path, metadata)
+
+                        st.success(f"✅ Model saved: `checkpoints/{unique_model_name}`")
+
+                        # Display model summary
+                        with st.expander("📋 Model Information"):
+                            summary = model_manager.get_model_summary(unique_model_name)
+                            if summary:
+                                st.text(summary)
+
+                        # Display evaluation results if full pipeline mode
+                        if workflow_mode == "🎯 Full Pipeline (Collect → Train → Evaluate)" and test_metrics:
                             st.markdown("---")
                             st.markdown("### 🎯 Automatic Evaluation")
 
-                            with st.spinner("Evaluating on test set..."):
-                                metrics, predictions, targets = trainer.evaluate(test_loader)
-
                             col1, col2, col3, col4 = st.columns(4)
                             with col1:
-                                st.metric("Test MAE", f"{metrics['mae']:.6f}")
+                                st.metric("Test MAE", f"{test_metrics['mae']:.6f}")
                             with col2:
-                                st.metric("Test RMSE", f"{metrics['rmse']:.6f}")
+                                st.metric("Test RMSE", f"{test_metrics['rmse']:.6f}")
                             with col3:
-                                st.metric("R² Score", f"{metrics['r2']:.4f}")
+                                st.metric("R² Score", f"{test_metrics['r2']:.4f}")
                             with col4:
-                                st.metric("Test Samples", metrics['num_samples'])
+                                st.metric("Test Samples", test_metrics['num_samples'])
 
                             st.success("✅ **Pipeline Complete!** Your model is ready for predictions.")
                             st.info("💡 **Next Step:** Go to 'Prediction' mode to use your trained model!")
@@ -1165,7 +1205,11 @@ if model_mode == "🎓 Train Model":
         if st.button("🚀 Start Training", type="primary", use_container_width=True):
             try:
                 from gnn_train import GNNTrainer, print_evaluation_results
+                from model_manager import ModelManager, create_training_metadata
                 import time
+
+                # Initialize model manager
+                model_manager = ModelManager(checkpoint_dir="checkpoints")
 
                 # Determine dataset type and create appropriate loaders
                 has_calphad = False
@@ -1406,6 +1450,16 @@ if model_mode == "🎓 Train Model":
                 # Placeholder for live training (simplified for Streamlit)
                 st.warning("⚠️ **Note:** Full training takes time. This will run synchronously and may timeout on Streamlit Cloud for large datasets. For long training runs, use the command-line script `gnn_train.py` locally.")
 
+                # Generate unique model name
+                dataset_name_for_model = "_".join(selected_datasets) if len(selected_datasets) <= 3 else f"combined_{len(selected_datasets)}datasets"
+                properties_for_model = target_properties if target_properties else ["formation_energy_per_atom"]
+
+                unique_model_name = model_manager.generate_model_name(
+                    dataset_name=dataset_name_for_model,
+                    properties=properties_for_model,
+                    use_calphad=has_calphad
+                )
+
                 start_time = time.time()
 
                 # Train (this will block)
@@ -1415,7 +1469,8 @@ if model_mode == "🎓 Train Model":
                         val_loader=val_loader,
                         epochs=epochs,
                         patience=patience,
-                        verbose=False  # Don't print to console
+                        verbose=False,  # Don't print to console
+                        model_name=unique_model_name
                     )
 
                 training_time = time.time() - start_time
@@ -1436,21 +1491,54 @@ if model_mode == "🎓 Train Model":
                 fig = trainer.plot_training_history()
                 st.pyplot(fig)
 
-                # Evaluate on test set (single-task only for now)
+                # Evaluate on test set
+                test_metrics = None
                 if not is_multitask:
                     st.markdown("### 🎯 Test Set Evaluation")
                     with st.spinner("Evaluating on test set..."):
-                        metrics, predictions, targets = trainer.evaluate(test_loader)
+                        test_metrics, predictions, targets = trainer.evaluate(test_loader)
 
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Test MAE", f"{metrics['mae']:.6f}")
+                        st.metric("Test MAE", f"{test_metrics['mae']:.6f}")
                     with col2:
-                        st.metric("Test RMSE", f"{metrics['rmse']:.6f}")
+                        st.metric("Test RMSE", f"{test_metrics['rmse']:.6f}")
                     with col3:
-                        st.metric("R² Score", f"{metrics['r2']:.4f}")
+                        st.metric("R² Score", f"{test_metrics['r2']:.4f}")
                     with col4:
-                        st.metric("Test Samples", metrics['num_samples'])
+                        st.metric("Test Samples", test_metrics['num_samples'])
+
+                # Save model metadata
+                metadata = create_training_metadata(
+                    dataset_name=dataset_name_for_model,
+                    properties=properties_for_model,
+                    num_samples=dataset_size,
+                    best_epoch=trainer.best_epoch,
+                    best_val_loss=trainer.best_val_loss,
+                    training_time_minutes=training_time / 60,
+                    use_calphad=has_calphad,
+                    chemical_system=None,  # Not available in manual mode
+                    test_metrics=test_metrics,
+                    hyperparameters={
+                        'batch_size': batch_size,
+                        'epochs': epochs,
+                        'learning_rate': learning_rate,
+                        'patience': patience,
+                        'train_ratio': train_ratio,
+                        'val_ratio': val_ratio
+                    }
+                )
+
+                model_path = Path("checkpoints") / unique_model_name
+                model_manager.save_model_with_metadata(model_path, metadata)
+
+                st.success(f"✅ Model saved: `checkpoints/{unique_model_name}`")
+
+                # Display model summary
+                with st.expander("📋 Model Information"):
+                    summary = model_manager.get_model_summary(unique_model_name)
+                    if summary:
+                        st.text(summary)
 
                     # Predictions vs Actual plot
                     fig_pred = px.scatter(
@@ -2005,6 +2093,100 @@ elif model_mode == "🔮 Prediction":
         st.error("⚠️ **No trained models found!**")
         st.info("Please train a model first in the '📊 Model Training' mode.")
         st.stop()
+
+    # Model Browser/Manager
+    with st.expander("📚 Model Library & Manager", expanded=False):
+        from model_manager import ModelManager
+        import json
+
+        model_manager = ModelManager(checkpoint_dir="checkpoints")
+        models = model_manager.list_models()
+
+        st.markdown(f"**Total Models:** {len(models)}")
+
+        if models:
+            for idx, model_info in enumerate(models):
+                with st.container():
+                    col1, col2, col3 = st.columns([3, 2, 1])
+
+                    with col1:
+                        st.markdown(f"**{model_info['filename']}**")
+                        if model_info['metadata']:
+                            meta = model_info['metadata']
+                            props = meta.get('properties', [])
+                            if isinstance(props, list) and len(props) > 1:
+                                st.caption(f"🎯 Multi-task: {', '.join(props[:3])}{'...' if len(props) > 3 else ''}")
+                            else:
+                                prop_name = props[0] if isinstance(props, list) else props
+                                st.caption(f"🎯 Single-task: {prop_name}")
+
+                            if 'dataset_name' in meta:
+                                st.caption(f"📊 Dataset: {meta['dataset_name']}")
+
+                    with col2:
+                        st.caption(f"📅 {model_info['modified'][:10]}")
+                        st.caption(f"💾 {model_info['size_mb']} MB")
+
+                        if model_info['metadata']:
+                            meta = model_info['metadata']
+                            if 'test_metrics' in meta and meta['test_metrics']:
+                                metrics = meta['test_metrics']
+                                if 'r2' in metrics:
+                                    st.caption(f"📈 R²: {metrics['r2']:.3f}")
+
+                    with col3:
+                        # Download button
+                        model_path = Path(model_info['path'])
+                        if model_path.exists():
+                            with open(model_path, 'rb') as f:
+                                model_bytes = f.read()
+
+                            st.download_button(
+                                label="💾",
+                                data=model_bytes,
+                                file_name=model_info['filename'],
+                                mime="application/octet-stream",
+                                key=f"download_{idx}",
+                                help="Download model file"
+                            )
+
+                    # Expandable details
+                    with st.expander(f"Details for {model_info['filename']}", expanded=False):
+                        if model_info['metadata']:
+                            meta = model_info['metadata']
+
+                            detail_col1, detail_col2 = st.columns(2)
+
+                            with detail_col1:
+                                st.markdown("**Training Info:**")
+                                st.write(f"• Samples: {meta.get('num_samples', 'N/A')}")
+                                st.write(f"• Best Epoch: {meta.get('best_epoch', 'N/A')}")
+                                st.write(f"• Best Val Loss: {meta.get('best_val_loss', 'N/A'):.6f}")
+                                st.write(f"• Training Time: {meta.get('training_time_minutes', 'N/A'):.1f} min")
+                                if 'use_calphad' in meta and meta['use_calphad']:
+                                    st.write("• ⚗️ CALPHAD Features: Yes")
+
+                            with detail_col2:
+                                st.markdown("**Performance:**")
+                                if 'test_metrics' in meta and meta['test_metrics']:
+                                    metrics = meta['test_metrics']
+                                    st.write(f"• MAE: {metrics.get('mae', 'N/A'):.6f}")
+                                    st.write(f"• RMSE: {metrics.get('rmse', 'N/A'):.6f}")
+                                    st.write(f"• R²: {metrics.get('r2', 'N/A'):.4f}")
+                                else:
+                                    st.write("No test metrics available")
+
+                            if 'hyperparameters' in meta and meta['hyperparameters']:
+                                st.markdown("**Hyperparameters:**")
+                                hyper = meta['hyperparameters']
+                                st.json(hyper)
+
+                        else:
+                            st.info("No metadata available for this model")
+
+                    st.markdown("---")
+        else:
+            st.info("No models found in the checkpoints directory")
 
     # Model selection
     selected_checkpoint_name = st.selectbox(
