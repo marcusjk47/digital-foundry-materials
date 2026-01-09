@@ -1201,6 +1201,108 @@ if model_mode == "🎓 Train Model":
 
         st.markdown("---")
 
+        # Large dataset handling
+        if total_materials > 800:
+            st.warning(f"⚠️ **Large Dataset Detected:** {total_materials:,} materials")
+            st.markdown("**Streamlit Cloud may timeout on large datasets.** Choose an option:")
+
+            training_strategy = st.radio(
+                "Training Strategy:",
+                [
+                    "🎯 Quick Train (Subsample)",
+                    "⚡ Full Train (May Timeout)",
+                    "💻 Download CLI Script"
+                ],
+                help="Choose how to handle large dataset training"
+            )
+
+            if training_strategy == "🎯 Quick Train (Subsample)":
+                st.info("**Quick Train:** Use a stratified subsample for fast experimentation")
+
+                subsample_size = st.slider(
+                    "Subsample size:",
+                    min_value=100,
+                    max_value=min(1000, total_materials),
+                    value=min(500, total_materials),
+                    step=100,
+                    help="Number of materials to use for training"
+                )
+
+                use_subsampling = True
+                st.caption(f"Will train on {subsample_size} / {total_materials} materials ({subsample_size/total_materials*100:.1f}%)")
+
+                # Estimate training time
+                est_time_minutes = (subsample_size / 100) * 1.5  # Rough estimate: 1.5 min per 100 samples
+                st.caption(f"⏱️ Estimated time: ~{est_time_minutes:.1f} minutes")
+
+                if est_time_minutes > 10:
+                    st.warning("⚠️ May still timeout. Consider reducing subsample size or using CLI script.")
+
+            elif training_strategy == "⚡ Full Train (May Timeout)":
+                st.warning("**Full Training:** This may timeout on Streamlit Cloud!")
+                st.info("💡 **Tip:** Use the CLI script for reliable training on large datasets")
+                use_subsampling = False
+                subsample_size = total_materials
+
+                # Estimate training time
+                est_time_minutes = (total_materials / 100) * 1.5
+                st.caption(f"⏱️ Estimated time: ~{est_time_minutes:.1f} minutes")
+
+                if est_time_minutes > 15:
+                    st.error(f"❌ Likely to timeout! ({est_time_minutes:.0f} min > 15 min limit)")
+
+            else:  # Download CLI Script
+                st.info("**CLI Training:** Download the script to train locally or on cloud")
+
+                with open("train_large_dataset.py", 'r') as f:
+                    cli_script = f.read()
+
+                st.download_button(
+                    label="📥 Download train_large_dataset.py",
+                    data=cli_script,
+                    file_name="train_large_dataset.py",
+                    mime="text/x-python",
+                    help="Download the standalone training script"
+                )
+
+                st.markdown("""
+                **How to use:**
+                ```bash
+                # Install dependencies (if needed)
+                pip install torch torch-geometric pymatgen mp-api pycalphad
+
+                # Train on your dataset
+                python train_large_dataset.py --dataset datasets/your_dataset.pkl --epochs 150
+
+                # With GPU (if available)
+                python train_large_dataset.py --dataset datasets/your_dataset.pkl --device cuda
+
+                # See all options
+                python train_large_dataset.py --help
+                ```
+
+                **Benefits:**
+                - ✅ No timeout limits
+                - ✅ GPU support (faster training)
+                - ✅ Progress tracking
+                - ✅ Checkpoint resumption
+                - ✅ Upload trained model back to Streamlit
+                """)
+
+                st.stop()  # Don't show training button if downloading CLI script
+        else:
+            use_subsampling = False
+            subsample_size = total_materials
+
+            # Estimate training time for normal datasets
+            est_time_minutes = (total_materials / 100) * 1.5
+            if est_time_minutes > 10:
+                st.info(f"⏱️ Estimated training time: ~{est_time_minutes:.1f} minutes")
+                if est_time_minutes > 15:
+                    st.warning("⚠️ May timeout on Streamlit Cloud. Consider using the CLI script.")
+
+        st.markdown("---")
+
         # Start training button
         if st.button("🚀 Start Training", type="primary", use_container_width=True):
             try:
@@ -1297,6 +1399,19 @@ if model_mode == "🎓 Train Model":
                         from gnn_dataset import CrystalGraphDataset, split_dataset, create_data_loaders
 
                         graphs = load_graph_dataset(ds_path)
+
+                        # Apply subsampling if requested
+                        if use_subsampling and len(graphs) > subsample_size:
+                            import random
+                            st.info(f"🎯 Subsampling {subsample_size} materials from {len(graphs)} total")
+
+                            # Stratified sampling to maintain diversity
+                            random.seed(42)  # Reproducibility
+                            sampled_indices = random.sample(range(len(graphs)), subsample_size)
+                            graphs = [graphs[i] for i in sorted(sampled_indices)]
+
+                            st.success(f"✓ Sampled {len(graphs)} materials")
+
                         dataset = CrystalGraphDataset(graphs)
                         dataset_size = len(dataset)
 
