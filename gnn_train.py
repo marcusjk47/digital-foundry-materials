@@ -201,7 +201,7 @@ class GNNTrainer:
                 T_max=epochs,
                 eta_min=1e-6
             )
-            print("✓ Using Cosine Annealing LR Scheduler")
+            print("[OK] Using Cosine Annealing LR Scheduler")
 
         patience_counter = 0
 

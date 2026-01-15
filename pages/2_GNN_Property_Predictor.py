@@ -758,15 +758,15 @@ if model_mode == "🎓 Train Model":
             st.markdown("**Advanced Features**")
 
             use_calphad = st.checkbox(
-                "Enable CALPHAD features",
+                "Enable enhanced elemental features",
                 value=template["calphad"],
-                help="Enhance graphs with thermodynamic features (melting point, heat capacity, mixing energy)"
+                help="Add thermodynamic and electronic properties (melting point, electronegativity, atomic radius, etc.)"
             )
 
             if use_calphad:
-                st.info("ℹ️ CALPHAD features add thermodynamic properties:\n"
-                       "- Node features: 13D (atomic# + 9 element + 3 CALPHAD)\n"
-                       "- Edge features: 2D (distance + mixing energy)")
+                st.info("ℹ️ **Enhanced features include:**\n"
+                       "- Node features: 13D (atomic# + electronegativity, radius, ionization energy, melting point, heat capacity, etc.)\n"
+                       "- Edge features: 2D (distance + mixing energy estimate)")
 
             dataset_name = st.text_input(
                 "Dataset name:",
@@ -844,7 +844,7 @@ if model_mode == "🎓 Train Model":
                     st.success(f"💾 Saved to {save_path}")
 
                 if use_calphad:
-                    st.success("🔬 CALPHAD features enabled - graphs enhanced with thermodynamic properties!")
+                    st.success("🔬 Enhanced features enabled - graphs include elemental descriptors (electronegativity, melting point, etc.)!")
 
                 # Show statistics
                 st.markdown("**Dataset Statistics:**")
@@ -1265,21 +1265,28 @@ if model_mode == "🎓 Train Model":
                     help="Download the standalone training script"
                 )
 
-                st.markdown("""
+                # Get the selected dataset path
+                first_dataset_name = selected_datasets[0]
+                ds_type, dataset_path = available_datasets[first_dataset_name]
+
+                # Generate ready-to-run command
+                st.markdown(f"""
                 **How to use:**
                 ```bash
                 # Install dependencies (if needed)
                 pip install torch torch-geometric pymatgen mp-api pycalphad
 
-                # Train on your dataset
-                python train_large_dataset.py --dataset datasets/your_dataset.pkl --epochs 150
+                # Train on your selected dataset: {first_dataset_name}
+                python train_large_dataset.py --dataset {dataset_path} --epochs 150 --batch-size 32
 
-                # With GPU (if available)
-                python train_large_dataset.py --dataset datasets/your_dataset.pkl --device cuda
+                # With GPU (if available) - RECOMMENDED for faster training
+                python train_large_dataset.py --dataset {dataset_path} --device cuda --epochs 150
 
                 # See all options
                 python train_large_dataset.py --help
                 ```
+
+                **Your dataset:** `{dataset_path}` ({total_materials:,} materials)
 
                 **Benefits:**
                 - ✅ No timeout limits
@@ -1449,8 +1456,8 @@ if model_mode == "🎓 Train Model":
                 st.success(f"✅ Loaded {dataset_size:,} materials")
 
                 if has_calphad:
-                    st.info("🔬 **CALPHAD-enhanced dataset detected!**")
-                    st.info("   Node features: 13D (atomic# + element + CALPHAD)")
+                    st.info("🔬 **Enhanced dataset detected!**")
+                    st.info("   Node features: 13D (atomic# + elemental descriptors)")
                     st.info("   Edge features: 2D (distance + mixing energy)")
 
                 if dataset_size < 10:
@@ -1497,7 +1504,7 @@ if model_mode == "🎓 Train Model":
                             n_hidden=n_hidden,
                             properties=target_properties
                         )
-                        st.success("✅ Using CALPHAD-enhanced Multi-Task CGCNN model")
+                        st.success("✅ Using Multi-Task CGCNN with enhanced features (13D node, 2D edge)")
                     else:
                         model = CGCNN_MultiTask(
                             node_feature_dim=node_dim,
@@ -1520,7 +1527,7 @@ if model_mode == "🎓 Train Model":
                             n_conv=n_conv,
                             n_hidden=n_hidden
                         )
-                        st.success("✅ Using CALPHAD-enhanced CGCNN model")
+                        st.success("✅ Using CGCNN with enhanced elemental features (13D node, 2D edge)")
                     else:
                         model = CGCNN(
                             node_feature_dim=node_dim,
@@ -1778,9 +1785,9 @@ if model_mode == "🎓 Train Model":
                         data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
 
                     if has_calphad_eval:
-                        st.info("🔬 CALPHAD-enhanced dataset detected")
+                        st.info("🔬 Enhanced dataset detected (13D node features)")
 
-                    # Load model (use CALPHAD model if CALPHAD features detected)
+                    # Load model (use enhanced model if enhanced features detected)
                     if has_calphad_eval:
                         model = CGCNN_CALPHAD_Regressor(
                             input_node_dim=13,
@@ -2195,8 +2202,58 @@ elif model_mode == "🔮 Prediction":
         available_checkpoints = list(checkpoints_dir.glob("*.pt"))
 
     if not available_checkpoints:
-        st.error("⚠️ **No trained models found!**")
-        st.info("Please train a model first in the '📊 Model Training' mode.")
+        st.warning("⚠️ **No trained models found in checkpoints directory!**")
+        st.info("**Options:**")
+        st.markdown("""
+        1. **Train a model** in the '🎓 Train Model' mode (select from sidebar), or
+        2. **Upload a trained model** using the section below
+        """)
+
+        st.markdown("---")
+
+        # Show upload section directly (no expander) when no models exist
+        st.subheader("📤 Upload Model File")
+        st.markdown("""
+        Upload a trained model file (.pt) to use for predictions.
+        The model will be saved to the checkpoints directory and become available for use.
+        """)
+
+        uploaded_model = st.file_uploader(
+            "Choose a model file",
+            type=['pt'],
+            help="Upload a .pt PyTorch model file",
+            key="model_uploader_no_models"
+        )
+
+        if uploaded_model is not None:
+            # Show file info
+            file_size_mb = len(uploaded_model.getvalue()) / (1024 * 1024)
+            st.info(f"📄 File: {uploaded_model.name} ({file_size_mb:.2f} MB)")
+
+            # Save button
+            if st.button("💾 Save Model to Checkpoints", type="primary"):
+                try:
+                    # Ensure checkpoints directory exists
+                    checkpoints_dir.mkdir(exist_ok=True)
+
+                    # Save the uploaded file
+                    model_save_path = checkpoints_dir / uploaded_model.name
+
+                    with open(model_save_path, 'wb') as f:
+                        f.write(uploaded_model.getvalue())
+
+                    st.success(f"✅ Model saved successfully to: {model_save_path}")
+                    st.info("🔄 Refresh the page (press F5 or Ctrl+R) to see the model in the dropdown.")
+                    st.balloons()
+
+                    # Update available checkpoints list
+                    available_checkpoints = list(checkpoints_dir.glob("*.pt"))
+
+                except Exception as e:
+                    st.error(f"❌ Error saving model: {str(e)}")
+
+        st.markdown("---")
+        st.info("💡 **Tip:** After uploading a model, refresh the page to use it for predictions!")
         st.stop()
 
     # Model Browser/Manager
@@ -2292,6 +2349,52 @@ elif model_mode == "🔮 Prediction":
                     st.markdown("---")
         else:
             st.info("No models found in the checkpoints directory")
+
+    # Model upload section
+    with st.expander("📤 Upload Model File", expanded=False):
+        st.markdown("""
+        Upload a trained model file (.pt) to use for predictions.
+        The model will be saved to the checkpoints directory and become available for selection.
+        """)
+
+        uploaded_model = st.file_uploader(
+            "Choose a model file",
+            type=['pt'],
+            help="Upload a .pt PyTorch model file",
+            key="model_uploader"
+        )
+
+        if uploaded_model is not None:
+            # Show file info
+            file_size_mb = len(uploaded_model.getvalue()) / (1024 * 1024)
+            st.info(f"📄 File: {uploaded_model.name} ({file_size_mb:.2f} MB)")
+
+            # Save button
+            if st.button("💾 Save Model to Checkpoints", type="primary"):
+                try:
+                    # Ensure checkpoints directory exists
+                    checkpoints_dir.mkdir(exist_ok=True)
+
+                    # Save the uploaded file
+                    model_save_path = checkpoints_dir / uploaded_model.name
+
+                    # Check if file already exists
+                    if model_save_path.exists():
+                        st.warning(f"⚠️ Model '{uploaded_model.name}' already exists. Overwriting...")
+
+                    with open(model_save_path, 'wb') as f:
+                        f.write(uploaded_model.getvalue())
+
+                    st.success(f"✅ Model saved successfully to: {model_save_path}")
+                    st.info("🔄 Refresh the page to see the new model in the dropdown below.")
+
+                    # Update available checkpoints list
+                    available_checkpoints = list(checkpoints_dir.glob("*.pt"))
+
+                except Exception as e:
+                    st.error(f"❌ Error saving model: {str(e)}")
+
+    st.markdown("---")
 
     # Model selection
     selected_checkpoint_name = st.selectbox(

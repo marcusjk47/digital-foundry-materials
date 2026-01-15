@@ -1,8 +1,12 @@
 """
-CALPHAD Feature Extraction Module
+Elemental Thermodynamic Feature Extraction Module
 
-Extracts thermodynamic features from TDB files to enhance GNN node/edge features.
-Integrates with ESPEI-generated databases and PyCalphad for thermodynamic calculations.
+Extracts elemental thermodynamic properties (melting point, heat capacity) to enhance
+GNN node/edge features. Can optionally integrate with CALPHAD TDB files for more
+accurate mixing energy calculations, but by default uses elemental property lookups.
+
+Note: Despite the filename, these are primarily elemental descriptors, not CALPHAD
+calculations. The name is kept for backwards compatibility with trained models.
 
 Author: Digital Foundry Materials Science Toolkit
 """
@@ -23,11 +27,15 @@ except ImportError:
 
 class CALPHADFeatureExtractor:
     """
-    Extract thermodynamic features from CALPHAD TDB files.
+    Extract elemental thermodynamic properties for GNN features.
 
-    Features extracted:
-    - Per-element (node features): melting point, heat capacity, enthalpy
-    - Per-bond (edge features): mixing enthalpy between elements
+    Features extracted (from elemental property databases):
+    - Per-element (node features): melting point, heat capacity, formation enthalpy
+    - Per-bond (edge features): mixing enthalpy estimate (empirical or from TDB)
+
+    Note: These are elemental descriptors, not CALPHAD calculations. The class can
+    optionally use CALPHAD TDB files for mixing energies if provided, otherwise uses
+    simple empirical models based on electronegativity differences.
     """
 
     def __init__(self, tdb_path: Optional[str] = None, reference_temp: float = 298.15):
@@ -99,14 +107,15 @@ class CALPHADFeatureExtractor:
 
     def get_element_features(self, element: str, normalize: bool = True) -> np.ndarray:
         """
-        Extract CALPHAD features for a single element.
+        Extract elemental thermodynamic properties for a single element.
 
         Args:
             element: Element symbol (e.g., 'Fe', 'Ni')
             normalize: Whether to normalize features to [0, 1]
 
         Returns:
-            Array of thermodynamic features [melting_T, heat_capacity, enthalpy]
+            Array of elemental properties [melting_T, heat_capacity, formation_enthalpy]
+            Note: Formation enthalpy is always 0 for pure elements
         """
         features = []
 
