@@ -326,6 +326,69 @@ PROPERTY_INFO = {
         'description': 'Fermi level energy',
         'typical_range': (-10.0, 10.0),
         'lower_is_better': False
+    },
+    'uncorrected_energy_per_atom': {
+        'name': 'Uncorrected Energy',
+        'unit': 'eV/atom',
+        'description': 'DFT total energy per atom (uncorrected)',
+        'typical_range': (-10.0, 0.0),
+        'lower_is_better': True
+    },
+    'equilibrium_reaction_energy_per_atom': {
+        'name': 'Reaction Energy',
+        'unit': 'eV/atom',
+        'description': 'Energy of equilibrium reaction',
+        'typical_range': (-2.0, 0.5),
+        'lower_is_better': True
+    },
+    'e_total': {
+        'name': 'Total Energy',
+        'unit': 'eV',
+        'description': 'Total system energy',
+        'typical_range': (-1000.0, 0.0),
+        'lower_is_better': True
+    },
+    'e_electronic': {
+        'name': 'Electronic Energy',
+        'unit': 'eV',
+        'description': 'Electronic contribution to energy',
+        'typical_range': (-1000.0, 0.0),
+        'lower_is_better': False
+    },
+    'e_ionic': {
+        'name': 'Ionic Energy',
+        'unit': 'eV',
+        'description': 'Ionic contribution to energy',
+        'typical_range': (-100.0, 100.0),
+        'lower_is_better': False
+    },
+    'n': {
+        'name': 'Refractive Index',
+        'unit': '',
+        'description': 'Optical refractive index',
+        'typical_range': (1.0, 4.0),
+        'lower_is_better': False
+    },
+    'e_ij_max': {
+        'name': 'Max Piezoelectric Coeff',
+        'unit': 'C/m²',
+        'description': 'Maximum piezoelectric strain coefficient',
+        'typical_range': (0.0, 10.0),
+        'lower_is_better': False
+    },
+    'weighted_surface_energy': {
+        'name': 'Surface Energy',
+        'unit': 'J/m²',
+        'description': 'Weighted average surface energy',
+        'typical_range': (0.0, 5.0),
+        'lower_is_better': True
+    },
+    'weighted_work_function': {
+        'name': 'Work Function',
+        'unit': 'eV',
+        'description': 'Weighted average work function',
+        'typical_range': (2.0, 7.0),
+        'lower_is_better': False
     }
 }
 
