@@ -740,15 +740,6 @@ if model_mode == "🎓 Train Model":
                     'shear_modulus': 'Shear Modulus (GPa)',
                     'total_magnetization': 'Total Magnetization (μB)',
                     'efermi': 'Fermi Energy (eV)',
-                    'uncorrected_energy_per_atom': 'Uncorrected Energy (eV/atom)',
-                    'equilibrium_reaction_energy_per_atom': 'Reaction Energy (eV/atom)',
-                    'e_total': 'Total Energy (eV)',
-                    'e_electronic': 'Electronic Energy (eV)',
-                    'e_ionic': 'Ionic Energy (eV)',
-                    'n': 'Refractive Index',
-                    'e_ij_max': 'Max Piezoelectric Strain Coefficient',
-                    'weighted_surface_energy': 'Surface Energy (J/m²)',
-                    'weighted_work_function': 'Work Function (eV)',
                 }
 
                 target_properties = st.multiselect(

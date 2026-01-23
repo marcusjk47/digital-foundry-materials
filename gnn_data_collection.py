@@ -76,17 +76,7 @@ def fetch_materials_data(
                 "total_magnetization",
                 "efermi",
                 "uncorrected_energy_per_atom",
-                "equilibrium_reaction_energy_per_atom",
-                "e_total",
-                "e_electronic",
-                "e_ionic",
-                "n",
-                "e_ij_max",
-                "weighted_surface_energy",
-                "weighted_work_function",
-                "surface_anisotropy",
-                "shape_factor",
-                "ordering"
+                "equilibrium_reaction_energy_per_atom"
             ]
         }
 
