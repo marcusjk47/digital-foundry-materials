@@ -676,9 +676,11 @@ if model_mode == "🎓 Train Model":
 
             data_mode = st.radio(
                 "Data selection:",
-                ["Chemical System", "Elements", "All Metallic"],
+                ["Chemical System", "Multi-System (Diverse Dataset)", "Elements", "All Metallic"],
                 help="How to filter materials"
             )
+
+            chemical_systems = None  # For multi-system mode
 
             if data_mode == "Chemical System":
                 chemsys = st.text_input(
@@ -687,6 +689,53 @@ if model_mode == "🎓 Train Model":
                     help="e.g., Fe-Ni, Fe-Ni-Cr, Ti-Al"
                 )
                 elements = None
+            elif data_mode == "Multi-System (Diverse Dataset)":
+                st.markdown("**🌐 Collect from Multiple Alloy Systems**")
+                st.info("Create large, diverse datasets by combining multiple chemical systems")
+
+                # Preset multi-system collections
+                preset_collections = {
+                    "Transition Metal Alloys (5 systems)": ["Fe-Ni", "Co-Cr", "Ti-Al", "Cu-Zn", "Ni-Mo"],
+                    "Steel Alloys (6 systems)": ["Fe-Ni", "Fe-Cr", "Fe-Mn", "Fe-Mo", "Fe-V", "Fe-C"],
+                    "Lightweight Alloys (4 systems)": ["Al-Mg", "Al-Ti", "Ti-Al", "Mg-Zn"],
+                    "Precious Metal Alloys (4 systems)": ["Au-Ag", "Au-Cu", "Pt-Pd", "Ag-Cu"],
+                    "Refractory Alloys (5 systems)": ["Mo-W", "Ta-W", "Nb-Mo", "Ti-W", "V-Cr"],
+                    "Custom (Manual Selection)": []
+                }
+
+                collection_choice = st.selectbox(
+                    "Select preset or custom:",
+                    list(preset_collections.keys()),
+                    help="Choose a preset collection or define your own"
+                )
+
+                if collection_choice == "Custom (Manual Selection)":
+                    systems_input = st.text_area(
+                        "Enter chemical systems (one per line):",
+                        value="Fe-Ni\nCo-Cr\nTi-Al\nCu-Zn",
+                        help="Enter each chemical system on a new line",
+                        height=150
+                    )
+                    chemical_systems = [s.strip() for s in systems_input.split("\n") if s.strip()]
+                else:
+                    chemical_systems = preset_collections[collection_choice]
+                    st.success(f"✓ Selected {len(chemical_systems)} systems: {', '.join(chemical_systems)}")
+
+                max_materials_per_system = st.slider(
+                    "Materials per system:",
+                    min_value=50,
+                    max_value=1000,
+                    value=300,
+                    step=50,
+                    help="Number of materials to fetch from each system"
+                )
+
+                total_estimate = len(chemical_systems) * max_materials_per_system
+                st.info(f"📊 **Estimated total materials:** ~{total_estimate:,} (actual may vary)")
+
+                chemsys = None
+                elements = None
+
             elif data_mode == "Elements":
                 elements_str = st.text_input(
                     "Elements (comma-separated):",
@@ -768,6 +817,86 @@ if model_mode == "🎓 Train Model":
                        "- Node features: 13D (atomic# + electronegativity, radius, ionization energy, melting point, heat capacity, etc.)\n"
                        "- Edge features: 2D (distance + mixing energy estimate)")
 
+                # ESPEI TDB Integration
+                with st.expander("🔬 ESPEI Thermodynamic Database (Optional - Advanced)", expanded=False):
+                    st.markdown("""
+                    **Enhance Feature Accuracy with ESPEI**
+
+                    ESPEI can generate thermodynamic databases (TDB) from your collected data, providing
+                    physically accurate mixing energies instead of empirical estimates.
+
+                    **Benefits:**
+                    - Real CALPHAD calculations instead of simple electronegativity models
+                    - Thermodynamically consistent mixing energies
+                    - Can improve model accuracy by 5-15% for alloy systems
+
+                    **When to use:**
+                    - Training on specific alloy systems (e.g., Fe-Ni, Co-Cr)
+                    - Want maximum physical accuracy
+                    - Have 50+ materials in your dataset
+                    """)
+
+                    espei_option = st.radio(
+                        "ESPEI Integration:",
+                        ["Skip (use default features)", "Upload existing TDB file", "Generate TDB automatically (requires ESPEI)"],
+                        help="Choose how to provide thermodynamic data"
+                    )
+
+                    tdb_path = None
+
+                    if espei_option == "Upload existing TDB file":
+                        uploaded_tdb = st.file_uploader(
+                            "Upload TDB file:",
+                            type=['tdb', 'TDB'],
+                            help="Upload a thermodynamic database file"
+                        )
+
+                        if uploaded_tdb:
+                            import tempfile
+                            # Save uploaded TDB to temp location
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.tdb') as tmp_file:
+                                tmp_file.write(uploaded_tdb.getvalue())
+                                tdb_path = tmp_file.name
+
+                            st.success(f"✅ TDB uploaded: {uploaded_tdb.name}")
+
+                            # Validate TDB
+                            try:
+                                from espei_workflow_manager import ESPEIWorkflowManager
+                                manager = ESPEIWorkflowManager(Path("espei_output"))
+                                tdb_info = manager.get_tdb_info(Path(tdb_path))
+
+                                if tdb_info['valid']:
+                                    st.info(f"**TDB Info:**\n"
+                                           f"- Elements: {', '.join(tdb_info['elements'])}\n"
+                                           f"- Phases: {', '.join(tdb_info['phases'])}")
+                                else:
+                                    st.error(f"⚠️ TDB validation failed: {tdb_info['message']}")
+                                    tdb_path = None
+                            except Exception as e:
+                                st.warning(f"Could not validate TDB: {e}")
+
+                    elif espei_option == "Generate TDB automatically (requires ESPEI)":
+                        st.info("TDB will be generated after data collection using ESPEI")
+
+                        # Store flag for TDB generation
+                        if 'generate_tdb_after_collection' not in st.session_state:
+                            st.session_state['generate_tdb_after_collection'] = False
+
+                        st.session_state['generate_tdb_after_collection'] = True
+
+                        # ESPEI configuration
+                        phases_to_include = st.multiselect(
+                            "Phases to include in TDB:",
+                            ["LIQUID", "FCC_A1", "BCC_A2", "HCP_A3"],
+                            default=["LIQUID", "FCC_A1"],
+                            help="Select which crystal phases to model"
+                        )
+
+                        st.session_state['espei_phases'] = phases_to_include
+
+                        st.warning("⏱️ TDB generation may take 2-5 minutes depending on dataset size")
+
             dataset_name = st.text_input(
                 "Dataset name:",
                 value=template["dataset_name"],
@@ -785,23 +914,51 @@ if model_mode == "🎓 Train Model":
 
         if st.button(button_text, type="primary", use_container_width=True):
             try:
-                from gnn_data_collection import fetch_materials_data, convert_to_graphs, get_dataset_statistics, print_dataset_info
+                from gnn_data_collection import fetch_materials_data, fetch_multi_system_data, convert_to_graphs, get_dataset_statistics, print_dataset_info
 
-                with st.spinner("Fetching materials from Materials Project..."):
-                    df = fetch_materials_data(
-                        api_key=api_key,
-                        elements=elements,
-                        chemsys=chemsys,
-                        max_materials=max_materials,
-                        metallic_only=metallic_only,
-                        stable_only=stable_only
-                    )
+                # Check if multi-system mode
+                if chemical_systems is not None and len(chemical_systems) > 0:
+                    # Multi-system data collection
+                    with st.spinner(f"Fetching materials from {len(chemical_systems)} chemical systems..."):
+                        df = fetch_multi_system_data(
+                            api_key=api_key,
+                            chemical_systems=chemical_systems,
+                            max_materials_per_system=max_materials_per_system,
+                            metallic_only=metallic_only,
+                            stable_only=stable_only
+                        )
 
-                if df.empty:
-                    st.error("No materials found with these criteria!")
-                    st.stop()
+                    if df.empty:
+                        st.error("No materials found in any of the selected systems!")
+                        st.stop()
 
-                st.success(f"✅ Fetched {len(df)} materials")
+                    st.success(f"✅ Fetched {len(df)} materials from {len(chemical_systems)} systems")
+
+                    # Show system breakdown
+                    if 'chemical_system' in df.columns:
+                        st.markdown("**Materials by System:**")
+                        system_counts = df['chemical_system'].value_counts()
+                        breakdown_cols = st.columns(min(len(system_counts), 5))
+                        for idx, (system, count) in enumerate(system_counts.items()):
+                            with breakdown_cols[idx % 5]:
+                                st.metric(system, count)
+                else:
+                    # Single-system data collection
+                    with st.spinner("Fetching materials from Materials Project..."):
+                        df = fetch_materials_data(
+                            api_key=api_key,
+                            elements=elements,
+                            chemsys=chemsys,
+                            max_materials=max_materials,
+                            metallic_only=metallic_only,
+                            stable_only=stable_only
+                        )
+
+                    if df.empty:
+                        st.error("No materials found with these criteria!")
+                        st.stop()
+
+                    st.success(f"✅ Fetched {len(df)} materials")
 
                 # Convert to graphs
                 if len(target_properties) > 1:

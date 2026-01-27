@@ -169,6 +169,97 @@ def fetch_materials_data(
     return df
 
 
+def fetch_multi_system_data(
+    api_key: str,
+    chemical_systems: List[str],
+    max_materials_per_system: int = 500,
+    metallic_only: bool = True,
+    stable_only: bool = False,
+    properties: Optional[List[str]] = None
+) -> pd.DataFrame:
+    """
+    Fetch materials data from multiple chemical systems to create a diverse dataset.
+
+    Args:
+        api_key: Materials Project API key
+        chemical_systems: List of chemical systems (e.g., ["Fe-Ni", "Co-Cr", "Ti-Al"])
+        max_materials_per_system: Maximum materials to fetch per system
+        metallic_only: Only fetch metallic materials
+        stable_only: Only fetch thermodynamically stable materials
+        properties: List of properties to fetch
+
+    Returns:
+        Combined DataFrame from all systems with system labels
+    """
+    if properties is None:
+        properties = ["formation_energy_per_atom"]
+
+    print(f"\n{'='*70}")
+    print(f"MULTI-SYSTEM DATA COLLECTION")
+    print(f"{'='*70}")
+    print(f"Chemical systems: {', '.join(chemical_systems)}")
+    print(f"Materials per system: {max_materials_per_system}")
+    print(f"Total target: ~{len(chemical_systems) * max_materials_per_system} materials")
+    print(f"Metallic only: {metallic_only}")
+    print(f"Stable only: {stable_only}")
+    print(f"{'='*70}\n")
+
+    all_dataframes = []
+    system_stats = {}
+
+    for i, chemsys in enumerate(chemical_systems, 1):
+        print(f"\n[{i}/{len(chemical_systems)}] Fetching system: {chemsys}")
+        print(f"{'-'*70}")
+
+        try:
+            df_system = fetch_materials_data(
+                api_key=api_key,
+                chemsys=chemsys,
+                max_materials=max_materials_per_system,
+                metallic_only=metallic_only,
+                stable_only=stable_only,
+                properties=properties
+            )
+
+            if not df_system.empty:
+                # Add chemical system label
+                df_system['chemical_system'] = chemsys
+
+                all_dataframes.append(df_system)
+                system_stats[chemsys] = len(df_system)
+
+                print(f"✓ {chemsys}: {len(df_system)} materials")
+            else:
+                print(f"✗ {chemsys}: No materials found")
+                system_stats[chemsys] = 0
+
+        except Exception as e:
+            print(f"✗ {chemsys}: Error - {str(e)}")
+            system_stats[chemsys] = 0
+            continue
+
+    # Combine all dataframes
+    if not all_dataframes:
+        print("\n⚠️ No materials collected from any system!")
+        return pd.DataFrame()
+
+    combined_df = pd.concat(all_dataframes, ignore_index=True)
+
+    # Print summary
+    print(f"\n{'='*70}")
+    print(f"COLLECTION SUMMARY")
+    print(f"{'='*70}")
+    print(f"Total materials collected: {len(combined_df)}")
+    print(f"\nBreakdown by system:")
+    for system, count in sorted(system_stats.items(), key=lambda x: x[1], reverse=True):
+        percentage = (count / len(combined_df) * 100) if len(combined_df) > 0 else 0
+        print(f"  {system:20s}: {count:5d} materials ({percentage:5.1f}%)")
+
+    print(f"{'='*70}\n")
+
+    return combined_df
+
+
 def convert_to_graphs(
     df: pd.DataFrame,
     target_property: str = "formation_energy_per_atom",

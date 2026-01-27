@@ -16,6 +16,7 @@ import torch
 from typing import Dict, Optional, Tuple, List
 from pathlib import Path
 from pymatgen.core import Composition
+from functools import lru_cache
 
 try:
     from pycalphad import Database, equilibrium, variables as v
@@ -38,24 +39,43 @@ class CALPHADFeatureExtractor:
     simple empirical models based on electronegativity differences.
     """
 
-    def __init__(self, tdb_path: Optional[str] = None, reference_temp: float = 298.15):
+    def __init__(self, tdb_path: Optional[str] = None, reference_temp: float = 298.15,
+                 use_tdb_by_default: bool = True, cache_size: int = 1000):
         """
         Args:
             tdb_path: Path to TDB file (optional - can use defaults)
             reference_temp: Reference temperature in Kelvin (default: 298.15K)
+            use_tdb_by_default: If True, prefer TDB calculations over empirical (default: True)
+            cache_size: Size of LRU cache for mixing energy calculations (default: 1000)
         """
         self.tdb_path = tdb_path
         self.reference_temp = reference_temp
+        self.use_tdb_by_default = use_tdb_by_default
         self.db = None
+        self.tdb_loaded = False
+
+        # Cache for mixing energy calculations
+        self._mixing_energy_cache = {}
+        self._cache_size = cache_size
+        self._cache_hits = 0
+        self._cache_misses = 0
 
         # Load TDB database if provided
         if tdb_path and Path(tdb_path).exists() and PYCALPHAD_AVAILABLE:
             try:
                 self.db = Database(tdb_path)
-                print(f"Loaded TDB: {tdb_path}")
+                self.tdb_loaded = True
+                print(f"[CALPHAD] Loaded TDB: {tdb_path}")
+                print(f"[CALPHAD] Elements in TDB: {sorted([str(e) for e in self.db.elements if str(e) != 'VA'])}")
+                print(f"[CALPHAD] Phases in TDB: {sorted([str(p) for p in self.db.phases.keys()])}")
             except Exception as e:
-                print(f"Warning: Could not load TDB {tdb_path}: {e}")
+                print(f"[CALPHAD] Warning: Could not load TDB {tdb_path}: {e}")
+                print(f"[CALPHAD] Falling back to empirical models")
                 self.db = None
+                self.tdb_loaded = False
+        elif tdb_path:
+            print(f"[CALPHAD] TDB path provided but not loaded (file missing or PyCalphad unavailable)")
+            print(f"[CALPHAD] Using empirical models")
 
         # Default element properties (fallback)
         self._initialize_default_properties()
@@ -148,7 +168,7 @@ class CALPHADFeatureExtractor:
                          composition: float = 0.5,
                          temperature: Optional[float] = None) -> float:
         """
-        Calculate mixing energy between two elements.
+        Calculate mixing energy between two elements with caching.
 
         Args:
             element1, element2: Element symbols
@@ -161,18 +181,48 @@ class CALPHADFeatureExtractor:
         if temperature is None:
             temperature = self.reference_temp
 
-        # If TDB database available, try to calculate
-        if self.db is not None and PYCALPHAD_AVAILABLE:
+        # Create cache key (order-independent)
+        elem_pair = tuple(sorted([element1.upper(), element2.upper()]))
+        cache_key = (elem_pair, round(composition, 4), round(temperature, 2))
+
+        # Check cache
+        if cache_key in self._mixing_energy_cache:
+            self._cache_hits += 1
+            return self._mixing_energy_cache[cache_key]
+
+        self._cache_misses += 1
+
+        # Calculate mixing energy
+        mixing_energy = 0.0
+
+        # If TDB database available and we prefer TDB, try to calculate
+        if self.tdb_loaded and self.use_tdb_by_default and PYCALPHAD_AVAILABLE:
             try:
-                return self._calculate_mixing_energy_from_tdb(
+                mixing_energy = self._calculate_mixing_energy_from_tdb(
                     element1, element2, composition, temperature
                 )
+                # Cache the result
+                self._add_to_cache(cache_key, mixing_energy)
+                return mixing_energy
             except Exception as e:
                 # Fall back to empirical model
                 pass
 
         # Empirical mixing energy (Miedema model approximation)
-        return self._empirical_mixing_energy(element1, element2, composition)
+        mixing_energy = self._empirical_mixing_energy(element1, element2, composition)
+
+        # Cache the result
+        self._add_to_cache(cache_key, mixing_energy)
+
+        return mixing_energy
+
+    def _add_to_cache(self, key, value):
+        """Add entry to cache with LRU eviction."""
+        if len(self._mixing_energy_cache) >= self._cache_size:
+            # Remove oldest entry (first added)
+            self._mixing_energy_cache.pop(next(iter(self._mixing_energy_cache)))
+
+        self._mixing_energy_cache[key] = value
 
     def _calculate_mixing_energy_from_tdb(self, element1: str, element2: str,
                                           composition: float, temperature: float) -> float:
@@ -239,6 +289,89 @@ class CALPHADFeatureExtractor:
     def get_feature_dimension(self) -> int:
         """Return the number of CALPHAD features per element."""
         return 3  # melting_T, heat_capacity, formation_enthalpy
+
+    def calculate_mixing_energies_batch(
+        self,
+        element_pairs: List[Tuple[str, str]],
+        compositions: Optional[List[float]] = None,
+        temperature: Optional[float] = None
+    ) -> Dict[Tuple[str, str], float]:
+        """
+        Calculate mixing energies for multiple element pairs efficiently.
+
+        Args:
+            element_pairs: List of (element1, element2) tuples
+            compositions: List of compositions for each pair (default: 0.5 for all)
+            temperature: Temperature in K (uses reference_temp if None)
+
+        Returns:
+            Dictionary mapping (elem1, elem2) to mixing energy in J/mol
+        """
+        if compositions is None:
+            compositions = [0.5] * len(element_pairs)
+
+        if len(compositions) != len(element_pairs):
+            raise ValueError("Length of compositions must match element_pairs")
+
+        results = {}
+        for (elem1, elem2), comp in zip(element_pairs, compositions):
+            energy = self.get_mixing_energy(elem1, elem2, comp, temperature)
+            # Store with consistent ordering
+            key = tuple(sorted([elem1.upper(), elem2.upper()]))
+            results[key] = energy
+
+        return results
+
+    def get_cache_stats(self) -> Dict[str, int]:
+        """
+        Get statistics about cache performance.
+
+        Returns:
+            Dictionary with cache hits, misses, and hit rate
+        """
+        total = self._cache_hits + self._cache_misses
+        hit_rate = (self._cache_hits / total * 100) if total > 0 else 0
+
+        return {
+            'hits': self._cache_hits,
+            'misses': self._cache_misses,
+            'total_queries': total,
+            'hit_rate_percent': round(hit_rate, 2),
+            'cache_size': len(self._mixing_energy_cache),
+            'cache_limit': self._cache_size
+        }
+
+    def clear_cache(self):
+        """Clear the mixing energy cache and reset statistics."""
+        self._mixing_energy_cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
+
+    def is_tdb_loaded(self) -> bool:
+        """Check if TDB database is successfully loaded."""
+        return self.tdb_loaded
+
+    def get_tdb_info(self) -> Dict[str, any]:
+        """
+        Get information about the loaded TDB.
+
+        Returns:
+            Dictionary with TDB elements and phases
+        """
+        if not self.tdb_loaded or self.db is None:
+            return {
+                'loaded': False,
+                'path': self.tdb_path,
+                'elements': [],
+                'phases': []
+            }
+
+        return {
+            'loaded': True,
+            'path': self.tdb_path,
+            'elements': sorted([str(e) for e in self.db.elements if str(e) != 'VA']),
+            'phases': sorted([str(p) for p in self.db.phases.keys()])
+        }
 
     def extract_features_for_structure(self, composition: Composition,
                                        normalize: bool = True) -> Dict[str, np.ndarray]:
