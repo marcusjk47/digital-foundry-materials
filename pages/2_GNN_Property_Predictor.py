@@ -1039,6 +1039,43 @@ if model_mode == "🎓 Train Model":
                 sample_df = df[sample_cols].head(10)
                 st.dataframe(sample_df, use_container_width=True)
 
+                # Download dataset option
+                st.markdown("---")
+                st.markdown("**📥 Download Dataset**")
+
+                try:
+                    # Read the saved pickle file
+                    with open(save_path, 'rb') as f:
+                        dataset_bytes = f.read()
+
+                    # Also offer CSV download of the raw data
+                    csv_data = df.to_csv(index=False)
+
+                    col_dl1, col_dl2 = st.columns(2)
+
+                    with col_dl1:
+                        st.download_button(
+                            label="📦 Download Graph Dataset (.pkl)",
+                            data=dataset_bytes,
+                            file_name=os.path.basename(save_path),
+                            mime="application/octet-stream",
+                            help="Download the processed graph dataset for training"
+                        )
+
+                    with col_dl2:
+                        st.download_button(
+                            label="📊 Download Raw Data (.csv)",
+                            data=csv_data,
+                            file_name=f"{dataset_name}_raw.csv",
+                            mime="text/csv",
+                            help="Download the raw Materials Project data as CSV"
+                        )
+
+                    st.info("💡 **Tip**: The .pkl file contains the processed graph structures ready for training. The .csv file contains the raw Materials Project data.")
+
+                except Exception as e:
+                    st.warning(f"Could not create download buttons: {e}")
+
                 # Automatic workflow handling
                 if workflow_mode != "Manual (Step-by-step)":
                     st.markdown("---")
