@@ -16,6 +16,9 @@ import pandas as pd
 import torch
 from torch_geometric.data import Data
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing as mp
+from functools import partial
 
 from crystal_graph import structure_to_graph, structure_to_graph_with_calphad
 from mp_api.client import MPRester
@@ -260,6 +263,166 @@ def fetch_multi_system_data(
     return combined_df
 
 
+def fetch_multi_system_data_parallel(
+    api_key: str,
+    chemical_systems: List[str],
+    max_materials_per_system: int = 500,
+    metallic_only: bool = True,
+    stable_only: bool = False,
+    properties: Optional[List[str]] = None,
+    max_workers: int = 4
+) -> pd.DataFrame:
+    """
+    Fetch materials data from multiple chemical systems IN PARALLEL for faster collection.
+
+    This is a parallelized version of fetch_multi_system_data that fetches multiple
+    systems concurrently, significantly reducing total time.
+
+    Args:
+        api_key: Materials Project API key
+        chemical_systems: List of chemical systems (e.g., ["Fe-Ni", "Co-Cr", "Ti-Al"])
+        max_materials_per_system: Maximum materials to fetch per system
+        metallic_only: Only fetch metallic materials
+        stable_only: Only fetch thermodynamically stable materials
+        properties: List of properties to fetch
+        max_workers: Number of parallel workers (default: 4)
+
+    Returns:
+        Combined DataFrame from all systems with system labels
+    """
+    if properties is None:
+        properties = ["formation_energy_per_atom"]
+
+    print(f"\n{'='*70}")
+    print(f"PARALLEL MULTI-SYSTEM DATA COLLECTION")
+    print(f"{'='*70}")
+    print(f"Chemical systems: {', '.join(chemical_systems)}")
+    print(f"Materials per system: {max_materials_per_system}")
+    print(f"Total target: ~{len(chemical_systems) * max_materials_per_system} materials")
+    print(f"Parallel workers: {max_workers}")
+    print(f"Metallic only: {metallic_only}")
+    print(f"Stable only: {stable_only}")
+    print(f"{'='*70}\n")
+
+    all_dataframes = []
+    system_stats = {}
+
+    # Define worker function for parallel execution
+    def fetch_single_system(chemsys):
+        """Fetch data for a single chemical system"""
+        try:
+            df_system = fetch_materials_data(
+                api_key=api_key,
+                chemsys=chemsys,
+                max_materials=max_materials_per_system,
+                metallic_only=metallic_only,
+                stable_only=stable_only,
+                properties=properties
+            )
+
+            if not df_system.empty:
+                df_system['chemical_system'] = chemsys
+                return chemsys, df_system, len(df_system)
+            else:
+                return chemsys, None, 0
+
+        except Exception as e:
+            print(f"[ERROR] {chemsys}: {str(e)}")
+            return chemsys, None, 0
+
+    # Execute parallel fetching
+    print("Fetching systems in parallel...")
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_system = {
+            executor.submit(fetch_single_system, chemsys): chemsys
+            for chemsys in chemical_systems
+        }
+
+        # Process results as they complete
+        with tqdm(total=len(chemical_systems), desc="Systems fetched") as pbar:
+            for future in as_completed(future_to_system):
+                chemsys, df_system, count = future.result()
+                system_stats[chemsys] = count
+
+                if df_system is not None:
+                    all_dataframes.append(df_system)
+                    print(f"  [OK] {chemsys}: {count} materials")
+                else:
+                    print(f"  [SKIP] {chemsys}: No materials found")
+
+                pbar.update(1)
+
+    # Combine all dataframes
+    if not all_dataframes:
+        print("\n[WARNING] No materials collected from any system!")
+        return pd.DataFrame()
+
+    combined_df = pd.concat(all_dataframes, ignore_index=True)
+
+    # Print summary
+    print(f"\n{'='*70}")
+    print(f"COLLECTION SUMMARY")
+    print(f"{'='*70}")
+    print(f"Total materials collected: {len(combined_df)}")
+    print(f"\nBreakdown by system:")
+    for system, count in sorted(system_stats.items(), key=lambda x: x[1], reverse=True):
+        percentage = (count / len(combined_df) * 100) if len(combined_df) > 0 else 0
+        print(f"  {system:20s}: {count:5d} materials ({percentage:5.1f}%)")
+
+    print(f"{'='*70}\n")
+
+    return combined_df
+
+
+def _convert_single_structure(args):
+    """
+    Helper function for parallel graph conversion.
+    Must be at module level for multiprocessing.
+    """
+    idx, row, target_property, cutoff, max_neighbors, use_calphad, tdb_path = args
+
+    try:
+        # Convert structure to graph
+        if use_calphad:
+            graph = structure_to_graph_with_calphad(
+                row["structure"],
+                cutoff=cutoff,
+                max_neighbors=max_neighbors,
+                tdb_path=tdb_path,
+                use_element_features=True
+            )
+        else:
+            graph = structure_to_graph(
+                row["structure"],
+                cutoff=cutoff,
+                max_neighbors=max_neighbors
+            )
+
+        # Add target property
+        if target_property in row and pd.notna(row[target_property]):
+            graph.y = torch.tensor([row[target_property]], dtype=torch.float)
+        else:
+            return None  # Skip if target is missing
+
+        # Add metadata
+        graph.material_id = row["material_id"]
+        graph.formula_str = row["formula"]
+
+        # Add additional properties
+        if "band_gap" in row:
+            graph.band_gap = row["band_gap"]
+        if "energy_above_hull" in row:
+            graph.energy_above_hull = row["energy_above_hull"]
+        if "density" in row:
+            graph.density = row["density"]
+
+        return graph
+
+    except Exception as e:
+        return None
+
+
 def convert_to_graphs(
     df: pd.DataFrame,
     target_property: str = "formation_energy_per_atom",
@@ -356,6 +519,100 @@ def convert_to_graphs(
             failed_count += 1
             print(f"Warning: Failed to convert {row['material_id']}: {e}")
             continue
+
+    print(f"\nSuccessfully converted {len(graphs)} structures")
+    if failed_count > 0:
+        print(f"Failed: {failed_count} structures")
+
+    # Save if requested
+    if save_path:
+        save_graph_dataset(graphs, save_path)
+
+    return graphs
+
+
+def convert_to_graphs_parallel(
+    df: pd.DataFrame,
+    target_property: str = "formation_energy_per_atom",
+    cutoff: float = 8.0,
+    max_neighbors: int = 12,
+    use_calphad: bool = False,
+    tdb_path: Optional[str] = None,
+    save_path: Optional[str] = None,
+    check_duplicates: bool = True,
+    n_workers: Optional[int] = None
+) -> List[Data]:
+    """
+    Convert structures to graph representations IN PARALLEL for faster processing.
+
+    This is a parallelized version of convert_to_graphs that processes multiple
+    structures concurrently, significantly reducing total time for large datasets.
+
+    Args:
+        df: DataFrame with 'structure' column
+        target_property: Property to use as target (y)
+        cutoff: Cutoff distance for edges
+        max_neighbors: Maximum neighbors per atom
+        use_calphad: If True, use CALPHAD-enhanced graph construction
+        tdb_path: Path to TDB file for CALPHAD features (optional)
+        save_path: Path to save graph dataset (optional)
+        check_duplicates: If True, check for and warn about duplicate material IDs
+        n_workers: Number of parallel workers (default: CPU count - 1)
+
+    Returns:
+        List of PyTorch Geometric Data objects
+    """
+    # Check for duplicates
+    if check_duplicates and 'material_id' in df.columns:
+        unique_ids = df['material_id'].nunique()
+        total_ids = len(df)
+        if unique_ids < total_ids:
+            duplicates = total_ids - unique_ids
+            print(f"\n[WARNING] DUPLICATE DETECTION")
+            print(f"  Total materials: {total_ids}")
+            print(f"  Unique material IDs: {unique_ids}")
+            print(f"  Duplicates: {duplicates}")
+            print(f"  -> Deduplicating automatically...")
+
+            df = df.drop_duplicates(subset='material_id', keep='first')
+            print(f"  -> Deduplicated to {len(df)} unique materials")
+
+    # Determine number of workers
+    if n_workers is None:
+        n_workers = max(1, mp.cpu_count() - 1)
+
+    print(f"\nConverting {len(df)} structures to graphs (PARALLEL MODE)...")
+    print(f"  Target property: {target_property}")
+    print(f"  Cutoff: {cutoff} Å")
+    print(f"  Max neighbors: {max_neighbors}")
+    print(f"  CALPHAD features: {'Enabled' if use_calphad else 'Disabled'}")
+    print(f"  Workers: {n_workers}")
+
+    # Prepare arguments for parallel processing
+    args_list = [
+        (idx, row, target_property, cutoff, max_neighbors, use_calphad, tdb_path)
+        for idx, row in df.iterrows()
+    ]
+
+    # Process in parallel
+    graphs = []
+    failed_count = 0
+
+    # Use ThreadPoolExecutor instead of ProcessPoolExecutor to avoid pickling issues
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        # Submit all tasks
+        futures = [executor.submit(_convert_single_structure, args) for args in args_list]
+
+        # Collect results with progress bar
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Converting to graphs"):
+            try:
+                result = future.result()
+                if result is not None:
+                    graphs.append(result)
+                else:
+                    failed_count += 1
+            except Exception as e:
+                failed_count += 1
 
     print(f"\nSuccessfully converted {len(graphs)} structures")
     if failed_count > 0:

@@ -914,18 +914,25 @@ if model_mode == "🎓 Train Model":
 
         if st.button(button_text, type="primary", use_container_width=True):
             try:
-                from gnn_data_collection import fetch_materials_data, fetch_multi_system_data, convert_to_graphs, get_dataset_statistics, print_dataset_info
+                from gnn_data_collection import (
+                    fetch_materials_data,
+                    fetch_multi_system_data_parallel,
+                    convert_to_graphs_parallel,
+                    get_dataset_statistics,
+                    print_dataset_info
+                )
 
                 # Check if multi-system mode
                 if chemical_systems is not None and len(chemical_systems) > 0:
-                    # Multi-system data collection
-                    with st.spinner(f"Fetching materials from {len(chemical_systems)} chemical systems..."):
-                        df = fetch_multi_system_data(
+                    # Multi-system data collection (PARALLEL)
+                    with st.spinner(f"Fetching materials from {len(chemical_systems)} chemical systems in parallel..."):
+                        df = fetch_multi_system_data_parallel(
                             api_key=api_key,
                             chemical_systems=chemical_systems,
                             max_materials_per_system=max_materials_per_system,
                             metallic_only=metallic_only,
-                            stable_only=stable_only
+                            stable_only=stable_only,
+                            max_workers=min(4, len(chemical_systems))  # Limit to 4 workers
                         )
 
                     if df.empty:
@@ -985,16 +992,17 @@ if model_mode == "🎓 Train Model":
                     st.info(f"🎯 Each graph predicts {len(target_properties)} properties: {', '.join(target_properties)}")
 
                 else:
-                    # Single-property mode
-                    with st.spinner("Converting structures to graphs..."):
+                    # Single-property mode (PARALLEL)
+                    with st.spinner("Converting structures to graphs in parallel..."):
                         save_path = f"datasets/{dataset_name}.pkl"
-                        graphs = convert_to_graphs(
+                        graphs = convert_to_graphs_parallel(
                             df,
                             target_property=target_properties[0],
                             cutoff=cutoff,
                             max_neighbors=max_neighbors,
                             use_calphad=use_calphad,
-                            save_path=save_path
+                            save_path=save_path,
+                            n_workers=None  # Auto-detect CPU count
                         )
 
                     st.success(f"✅ Converted {len(graphs)} structures to graphs")
