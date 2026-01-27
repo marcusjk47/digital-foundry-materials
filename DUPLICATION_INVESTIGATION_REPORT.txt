@@ -1,0 +1,181 @@
+================================================================================
+DATASET DUPLICATION INVESTIGATION REPORT
+================================================================================
+Date: 2026-01-23
+Dataset: extremely_large_dataset (Co-Cr)
+Status: CRITICAL ISSUE RESOLVED
+
+================================================================================
+SUMMARY
+================================================================================
+
+The extremely_large_dataset contained massive duplication:
+- Claimed size: 2,996 materials
+- Actual unique materials: 14
+- Duplicates: 2,982 (99.5% duplication rate)
+
+Each of the 14 unique Co-Cr materials was repeated ~200-250 times to
+artificially inflate the dataset size.
+
+================================================================================
+DETAILED FINDINGS
+================================================================================
+
+1. DUPLICATION PATTERN
+   -------------------
+   The 14 unique material IDs were duplicated nearly equally:
+
+   mp-1077708: 253 times (8.4%)
+   mp-1226211: 249 times (8.3%)
+   mp-1018081: 249 times (8.3%)
+   mp-1226230: 249 times (8.3%)
+   mp-1077706: 202 times (6.7%)
+   mp-1084832: 201 times (6.7%)
+   mp-1226444: 200 times (6.7%)
+   mp-1227307: 200 times (6.7%)
+   mp-1080603: 200 times (6.7%)
+   mp-1087479: 199 times (6.6%)
+   mp-1226209: 199 times (6.6%)
+   mp-1225016: 199 times (6.6%)
+   mp-1225083: 198 times (6.6%)
+   mp-1096987: 198 times (6.6%)
+
+   Average copies per material: 214 times
+   Range: 198-253 copies (relatively uniform distribution)
+
+2. SHARD-BY-SHARD ANALYSIS
+   -----------------------
+   Shard 0 (1000 structures): 5 unique materials
+   Shard 1 (1000 structures): 9 unique materials
+   Shard 2 (996 structures):  4 unique materials
+
+   Pattern: Each shard contains only a subset of the 14 materials,
+   with those materials repeated to fill the shard to ~1000 entries.
+
+3. ROOT CAUSE
+   ----------
+   Manifest description: "Merged from: fairly_large_dataset,
+                         pretty_large_dataset, rather_large_dataset"
+
+   Investigation revealed:
+   - Source datasets do NOT exist in the datasets/ directory
+   - They were likely deleted after merging
+   - The merge operation appears to have merged the SAME dataset
+     multiple times under different names
+
+   Most likely scenario:
+   1. Original dataset of 14 Co-Cr materials was created
+   2. Dataset was duplicated/renamed as fairly_large_dataset
+   3. Dataset was duplicated/renamed as pretty_large_dataset
+   4. Dataset was duplicated/renamed as rather_large_dataset
+   5. All three were merged together, resulting in ~3x duplication
+   6. Additional duplication occurred to reach target size of 3000
+
+4. IMPACT ON MODEL TRAINING
+   ------------------------
+   The model trained on this dataset (99.56% R²) was essentially:
+   - Memorizing 14 materials
+   - Not learning generalizable patterns
+   - Test/validation sets contained the same 14 materials (duplicated)
+   - Metrics were misleading - high R² from overfitting
+
+   The model would perform VERY poorly on truly new Co-Cr materials
+   not in those 14 Material Project IDs.
+
+================================================================================
+RESOLUTION ACTIONS
+================================================================================
+
+1. DEDUPLICATION COMPLETED
+   ----------------------
+   Created: datasets/co_cr_deduplicated/co_cr_deduplicated.pkl
+
+   Result:
+   - 14 unique Co-Cr materials
+   - File size: 0.07 MB (down from ~80 MB)
+   - All duplicates removed
+   - Metadata saved with material ID list
+
+2. PREVENTION MEASURES IMPLEMENTED
+   -------------------------------
+   Modified: gnn_data_collection.py
+
+   Added automatic duplicate detection to convert_to_graphs():
+   - Checks for duplicate material_id values
+   - Warns user with counts
+   - Automatically deduplicates (keeps first occurrence)
+   - Reports deduplication statistics
+
+   This will prevent future accidental duplication during:
+   - Data collection
+   - Dataset conversion
+   - Graph generation
+
+3. RECOMMENDATION FOR NEW DATA COLLECTION
+   --------------------------------------
+   Use the new multi-system collection feature to gather
+   diverse, unique materials:
+
+   Example configuration:
+   - Data mode: "Multi-System (Diverse Dataset)"
+   - Preset: "Transition Metal Alloys (5 systems)"
+     * Fe-Ni
+     * Co-Cr
+     * Ti-Al
+     * Cu-Zn
+     * Ni-Mo
+   - Materials per system: 300-500
+   - Total: 1,500-2,500 UNIQUE materials
+
+   This will provide:
+   - Truly diverse training data
+   - Better model generalization
+   - Realistic performance metrics
+   - Coverage across multiple alloy types
+
+================================================================================
+LESSONS LEARNED
+================================================================================
+
+1. Always verify dataset uniqueness before training
+2. Check manifest descriptions for merge history
+3. Monitor for suspiciously high R² scores (>99% is often overfitting)
+4. Validate that train/val/test splits are truly independent
+5. Implement automatic duplicate detection in data pipelines
+
+================================================================================
+FILES CREATED
+================================================================================
+
+Investigation Scripts:
+- check_duplicates.py: Check .pkl files for duplicates
+- check_sharded_duplicates.py: Check sharded datasets for duplicates
+- deduplicate_dataset.py: Remove duplicates from datasets
+- investigate_duplication.py: Analyze duplication source
+
+Outputs:
+- datasets/co_cr_deduplicated/co_cr_deduplicated.pkl: Deduplicated dataset (14 materials)
+- datasets/co_cr_deduplicated/metadata.json: Deduplication metadata
+
+Documentation:
+- DUPLICATION_INVESTIGATION_REPORT.txt: This report
+
+Prevention:
+- gnn_data_collection.py: Added automatic duplicate detection
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Collect new, diverse dataset using multi-system collection
+2. Train model on truly unique data
+3. Validate model performance on independent test set
+4. Compare to deduplicated 14-material results (baseline)
+
+Expected outcome with proper diverse data:
+- Lower R² (~80-95% is more realistic for materials prediction)
+- Better generalization to unseen materials
+- More reliable performance estimates
+- Useful for real-world screening applications
+
+================================================================================

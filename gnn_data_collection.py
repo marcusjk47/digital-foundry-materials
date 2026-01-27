@@ -267,7 +267,8 @@ def convert_to_graphs(
     max_neighbors: int = 12,
     use_calphad: bool = False,
     tdb_path: Optional[str] = None,
-    save_path: Optional[str] = None
+    save_path: Optional[str] = None,
+    check_duplicates: bool = True
 ) -> List[Data]:
     """
     Convert structures to graph representations.
@@ -281,10 +282,27 @@ def convert_to_graphs(
                     (13D node features, 2D edge features)
         tdb_path: Path to TDB file for CALPHAD features (optional)
         save_path: Path to save graph dataset (optional)
+        check_duplicates: If True, check for and warn about duplicate material IDs (default: True)
 
     Returns:
         List of PyTorch Geometric Data objects
     """
+    # Check for duplicates in input data
+    if check_duplicates and 'material_id' in df.columns:
+        unique_ids = df['material_id'].nunique()
+        total_ids = len(df)
+        if unique_ids < total_ids:
+            duplicates = total_ids - unique_ids
+            print(f"\n[WARNING] DUPLICATE DETECTION")
+            print(f"  Total materials: {total_ids}")
+            print(f"  Unique material IDs: {unique_ids}")
+            print(f"  Duplicates: {duplicates}")
+            print(f"  -> Deduplicating automatically...")
+
+            # Remove duplicates, keeping first occurrence
+            df = df.drop_duplicates(subset='material_id', keep='first')
+            print(f"  -> Deduplicated to {len(df)} unique materials")
+
     print(f"\nConverting {len(df)} structures to graphs...")
     print(f"  Target property: {target_property}")
     print(f"  Cutoff: {cutoff} Å")
